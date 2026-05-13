@@ -13,6 +13,19 @@
  *
  */
 
+/**
+ * @typedef {Object} RoomJson - Room state returned by server Room.toJson()
+ * @property {string} id - Room ID
+ * @property {string} peers - JSON stringified Map of peers
+ * @property {number} peersCount - Number of peers in room
+ * @property {boolean} broadcasting - Whether broadcasting mode is enabled
+ * @property {Object} config - Room config (isLocked, isLobbyEnabled, hostOnlyRecording)
+ * @property {Object} moderator - Moderator settings
+ * @property {Object} survey - Survey config
+ * @property {Object} redirect - Redirect config
+ * @property {boolean} globalLobby - Whether global lobby is enabled
+ */
+
 const cfg = {
     useAvatarSvg: true,
 };
@@ -232,6 +245,9 @@ const VideoAI = {
 // Recording
 let recordedBlobs = [];
 
+/**
+ * RoomClient - Main client-side controller for WebRTC video conferencing
+ */
 class RoomClient {
     constructor(
         localAudioEl,
@@ -256,6 +272,7 @@ class RoomClient {
         this.peer_id = socket.id;
         this.peer_name = peer_name;
         this.peer_uuid = peer_uuid;
+        /** @type {Object} Local peer metadata (name, avatar, audio/video state, device info), sent to server on join */
         this.peer_info = peer_info;
         this.peer_avatar = peer_info.peer_avatar;
 
@@ -461,6 +478,7 @@ class RoomClient {
         this.audioProducerId = null;
         this.audioConsumers = new Map();
 
+        /** @type {Map<string, {peer_info: Object}>} Map of socket_id to peer data from server */
         this.peers = new Map();
         this.consumers = new Map();
         this.producers = new Map();
@@ -485,6 +503,21 @@ class RoomClient {
             this.eventListeners.set(evt, []);
         });
 
+        /**
+         * Extends socket with request() method for Promise-based acknowledgement communication.
+         * Wraps socket.emit() with a callback that resolves/rejects based on server response.
+         *
+         * Flow: client.request() → socket.emit(type, data, cb) → server calls cb(response) → Promise resolves
+         *
+         * @param {string} type - Event type to emit (e.g., 'join', 'createRoom', 'produce')
+         * @param {Object} [data={}] - Payload to send to server
+         * @returns {Promise<any>} Resolves with server response, rejects if response.error exists
+         *
+         * @example
+         * // Client sends request, server responds via callback
+         * const room = await socket.request('join', { peer_info });
+         * // Server: socket.on('join', (data, cb) => cb(room.toJson()))
+         */
         this.socket.request = function request(type, data = {}) {
             return new Promise((resolve, reject) => {
                 socket.emit(type, data, (data) => {
@@ -527,6 +560,10 @@ class RoomClient {
             });
     }
 
+    /**
+     * Join room via socket, sends peer_info to server
+     * @param {Object} data - { room_id: string, peer_info: Object }
+     */
     async join(data) {
         this.socket
             .request('join', data)
@@ -620,6 +657,10 @@ class RoomClient {
         return false;
     }
 
+    /**
+     * Setup MediaSoup device, transports, and start local media after join approved
+     * @param {RoomJson} room - Room state from server Room.toJson()
+     */
     async joinAllowed(room) {
         console.log('07 ----> Join Room allowed');
 
@@ -659,6 +700,10 @@ class RoomClient {
         await this.initTransports(this.device);
     }
 
+    /**
+     * Parse room state from server and initialize local state
+     * @param {RoomJson} room - Room state from server Room.toJson()
+     */
     async handleRoomInfo(room) {
         // ##########################################
         this.peers = new Map(JSON.parse(room.peers));

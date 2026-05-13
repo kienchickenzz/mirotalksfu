@@ -7,19 +7,51 @@ const log = new Logger('Room');
 
 const { audioLevelObserverEnabled, activeSpeakerObserverEnabled } = config.mediasoup.router;
 
+/**
+ * @typedef {import('mediasoup').types.Worker} MediasoupWorker
+ * @typedef {import('mediasoup').types.Router} MediasoupRouter
+ * @typedef {import('mediasoup').types.WebRtcServer} WebRtcServer
+ * @typedef {import('mediasoup').types.AudioLevelObserver} AudioLevelObserver
+ * @typedef {import('mediasoup').types.ActiveSpeakerObserver} ActiveSpeakerObserver
+ * @typedef {import('socket.io').Server} SocketIOServer
+ */
+
+/**
+ * Room class manages a video conference room with MediaSoup SFU and Socket.io signaling
+ */
 module.exports = class Room {
+    /**
+     * Creates a new Room instance
+     * @param {string} room_id - Unique identifier for the room
+     * @param {MediasoupWorker} worker - MediaSoup Worker instance for media processing
+     * @param {SocketIOServer} io - Socket.io Server instance for real-time signaling
+     */
     constructor(room_id, worker, io) {
         this.id = room_id;
+        
+        /** @type {MediasoupWorker} MediaSoup Worker for media processing */
         this.worker = worker;
+        
+        /** @type {WebRtcServer} WebRTC Server instance */
         this.webRtcServer = worker.appData.webRtcServer;
+        
+        /** @type {boolean} Whether WebRTC Server is active */
         this.webRtcServerActive = config.mediasoup.webRtcServerActive;
+        
+        /** @type {SocketIOServer} Socket.io Server for signaling */
         this.io = io;
+        
+        /** @type {AudioLevelObserver|null} Observer for audio levels */
         this.audioLevelObserver = null;
+        
         this.audioLevelObserverEnabled = audioLevelObserverEnabled !== undefined ? audioLevelObserverEnabled : true;
         this.audioLastUpdateTime = 0;
         this.activeSpeakerObserverEnabled =
             activeSpeakerObserverEnabled !== undefined ? activeSpeakerObserverEnabled : false;
+        
+        /** @type {ActiveSpeakerObserver|null} Observer for dominant speaker */
         this.activeSpeakerObserver = null;
+
         // ##########################
         this._isBroadcasting = false;
         // ##########################
@@ -61,10 +93,19 @@ module.exports = class Room {
         this.redirect = config?.features?.redirect;
         this.videoAIEnabled = config?.integrations?.videoAI?.enabled || false;
         this.videoAISessionTimeLimit = config?.integrations?.videoAI?.sessionTimeLimit || 0;
+        
+        /** @type {Map<string, import('./Peer')>} Map of socket_id to Peer instance */
         this.peers = new Map();
-        this.bannedPeers = new Map(); // uuid -> timestamp, with TTL-based expiration
+        
+        /** @type {Map<string, number>} Map of peer uuid to ban timestamp */
+        this.bannedPeers = new Map();
+        
         this.webRtcTransport = config.mediasoup.webRtcTransport;
+        
+        /** @type {MediasoupRouter|null} MediaSoup Router for this room */
         this.router = null;
+        
+        /** @type {Object} Router settings from config */
         this.routerSettings = config.mediasoup.router;
         this.createTheRouter();
 

@@ -68,6 +68,13 @@ dev dependencies: {
  *
  */
 
+/**
+ * @typedef {import('socket.io').Server} SocketIOServer
+ * @typedef {import('socket.io').Socket} SocketIOSocket
+ * @typedef {import('mediasoup').types.Worker} MediasoupWorker
+ * @typedef {import('mediasoup').types.Router} MediasoupRouter
+ */
+
 const express = require('express');
 const { auth, requiresAuth } = require('express-openid-connect');
 const { withFileLock } = require('./MutexManager');
@@ -370,7 +377,8 @@ const htmlInjector = new HtmlInjector(filesPath, config.ui.brand);
 
 const authHost = new Host(); // Authenticated IP by Login
 
-const roomList = new Map(); // All Rooms
+/** @type {Map<string, import('./Room')>} All active rooms: room_id → Room instance */
+const roomList = new Map();
 
 const presenters = {}; // Collect presenters grp by roomId
 
@@ -1977,7 +1985,8 @@ function startServer() {
     // SOCKET IO
     // ####################################################
 
-    io.on('connection', (socket) => {
+    // Handle new socket connection
+    io.on('connection', (/** @type {SocketIOSocket} */ socket) => {
         socket.on('clientError', (error) => {
             try {
                 log.error('Client error', error.message);
@@ -2009,7 +2018,11 @@ function startServer() {
             }
         });
 
-        socket.on('join', async (dataObject, cb) => {
+        // Handle peer join request
+        socket.on('join', async (
+            /** @type {{ room_id: string, peer_info: Object }} */ dataObject,
+            /** @type {Function} */ cb
+        ) => {
             if (!roomExists(socket)) {
                 return cb({
                     error: 'Room does not exist',

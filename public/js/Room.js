@@ -249,6 +249,7 @@ let virtualBackgroundTransparent;
 
 let swalBackground = 'radial-gradient(#393939, #000000)'; //'rgba(0, 0, 0, 0.7)';
 
+/** @type {RoomClient|null} Main client controller for WebRTC, created in joinRoom() */
 let rc = null;
 let producer = null;
 let participantsCount = 0;
@@ -273,6 +274,7 @@ let notify = getNotify();
 let chat = getChat();
 isPresenter = isPeerPresenter();
 
+/** @type {Object|null} Local peer metadata, sent to server on join */
 let peer_info = null;
 
 let isPushToTalkActive = false;

@@ -2372,7 +2372,13 @@ function startServer() {
             }
         });
 
-        socket.on('produce', async ({ producerTransportId, kind, appData, rtpParameters }, callback, errback) => {
+        // Handle 'produce' event - client wants to send media to server
+        socket.on('produce', async (
+            /** @type {{ producerTransportId: string, kind: 'audio'|'video', appData: {mediaType: string}, rtpParameters: Object }} */
+            { producerTransportId, kind, appData, rtpParameters },
+            /** @type {Function} */ callback,
+            /** @type {Function} */ errback
+        ) => {
             if (!roomExists(socket)) {
                 return callback({ error: 'Room not found' });
             }

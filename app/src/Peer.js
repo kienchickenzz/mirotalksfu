@@ -1,5 +1,13 @@
 'use strict';
 
+/**
+ * @typedef {import('mediasoup').types.WebRtcTransport} WebRtcTransport
+ * @typedef {import('mediasoup').types.Producer} Producer
+ * @typedef {import('mediasoup').types.Consumer} Consumer
+ * @typedef {import('mediasoup').types.DataProducer} DataProducer
+ * @typedef {import('mediasoup').types.DataConsumer} DataConsumer
+ */
+
 const Logger = require('./Logger');
 const log = new Logger('Peer');
 
@@ -35,10 +43,15 @@ module.exports = class Peer {
         this.peer_hand = peer_hand;
         this.peer_lobby = peer_lobby;
 
+        /** @type {Map<string, WebRtcTransport>} transport_id → WebRtcTransport (typically 2: send + recv) */
         this.transports = new Map();
+        /** @type {Map<string, Consumer>} consumer_id → Consumer (media FROM other peers) */
         this.consumers = new Map();
+        /** @type {Map<string, Producer>} producer_id → Producer (media TO server: audio/video/screen) */
         this.producers = new Map();
+        /** @type {Map<string, DataProducer>} dataProducer_id → DataProducer (DataChannel sending) */
         this.dataProducers = new Map();
+        /** @type {Map<string, DataConsumer>} dataConsumer_id → DataConsumer (DataChannel receiving) */
         this.dataConsumers = new Map();
     }
 
@@ -173,6 +186,14 @@ module.exports = class Peer {
         this.producers.set(producer_id, producer);
     }
 
+    /**
+     * Create a MediaSoup Producer on SendTransport to receive RTP from client
+     * @param {string} producerTransportId - SendTransport ID from transports Map
+     * @param {Object} producer_rtpParameters - RTP config from client (codecs, encodings, ssrc)
+     * @param {'audio'|'video'} producer_kind - Media kind for MediaSoup API
+     * @param {string} producer_type - Application media type: 'audioType' | 'videoType' | 'screenType'
+     * @returns {Promise<Producer>} MediaSoup Producer object
+     */
     async createProducer(producerTransportId, producer_rtpParameters, producer_kind, producer_type) {
         if (!producerTransportId || !producer_rtpParameters || !producer_kind || !producer_type) {
             throw new Error('Missing required parameters for creating a producer');
@@ -182,6 +203,7 @@ module.exports = class Peer {
             throw new Error(`Producer transport with ID ${producerTransportId} not found`);
         }
 
+        // 1. Get SendTransport from Map to create Producer on it
         const producerTransport = this.getTransport(producerTransportId);
 
         if (!producerTransport) {
@@ -190,11 +212,13 @@ module.exports = class Peer {
 
         let producer;
         try {
+            // 2. CORE: Call MediaSoup API - Transport creates Producer to receive RTP from client
             producer = await producerTransport.produce({
                 kind: producer_kind,
                 rtpParameters: producer_rtpParameters,
             });
 
+            // 3. Store Producer in Map for lifecycle management
             this.addProducer(producer.id, producer);
         } catch (error) {
             log.error(`Error creating producer for transport ID ${producerTransportId}`, {
@@ -211,8 +235,10 @@ module.exports = class Peer {
 
         const { id, appData, type, kind, rtpParameters } = producer;
 
+        // 4. Attach metadata to identify media type (audioType/videoType/screenType)
         appData.mediaType = producer_type;
 
+        // 5. Handle Simulcast/SVC - parse scalabilityMode to get spatial/temporal layers
         if (['simulcast', 'svc'].includes(type)) {
             const { scalabilityMode } = rtpParameters.encodings[0];
             const spatialLayer = parseInt(scalabilityMode.substring(1, 2)); // 1/2/3
@@ -227,6 +253,7 @@ module.exports = class Peer {
             log.debug('Producer created ----->', { type, kind });
         }
 
+        // 6. Cleanup: close Producer when Transport closes
         producer.once('transportclose', () => {
             log.debug('Producer "transportclose" event', { producerId: id });
             this.closeProducer(id);
@@ -297,6 +324,7 @@ module.exports = class Peer {
             throw new Error(`Consumer transport with ID ${consumer_transport_id} not found`);
         }
 
+        // 1. Get RecvTransport from Map to create Consumer on it
         const consumerTransport = this.getTransport(consumer_transport_id);
 
         if (!consumerTransport) {
@@ -305,14 +333,16 @@ module.exports = class Peer {
 
         let consumer;
         try {
+            // 2. CORE: Call MediaSoup API - Transport creates Consumer to send RTP to client
             consumer = await consumerTransport.consume({
                 producerId,
                 rtpCapabilities,
                 enableRtx: true, // Enable NACK for OPUS.
-                paused: true, // Start the consumer in a paused state
+                paused: true, // Start paused, client calls resumeConsumer when ready
                 ignoreDtx: true, // Ignore DTX (Discontinuous Transmission)
             });
 
+            // 3. Store Consumer in Map for lifecycle management
             this.addConsumer(consumer.id, consumer);
         } catch (error) {
             log.error(`Error creating consumer for transport ID ${consumer_transport_id}`, {
@@ -328,6 +358,7 @@ module.exports = class Peer {
 
         const { id, type, kind, rtpParameters, producerPaused } = consumer;
 
+        // 4. Handle Simulcast/SVC - select preferred quality layers for this consumer
         if (['simulcast', 'svc'].includes(type)) {
             // simulcast - L1T3/L2T3/L3T3 | svc - L3T3
             const { scalabilityMode } = rtpParameters.encodings[0];
@@ -335,6 +366,7 @@ module.exports = class Peer {
             const temporalLayer = parseInt(scalabilityMode.substring(3, 4)); // 1/2/3
 
             try {
+                // 5. Set quality layer - server decides which resolution/framerate to forward
                 await consumer.setPreferredLayers({
                     spatialLayer,
                     temporalLayer,
@@ -354,6 +386,7 @@ module.exports = class Peer {
             log.debug('Consumer created ----->', { type, kind });
         }
 
+        // 6. Cleanup: remove Consumer when Transport closes
         consumer.once('transportclose', () => {
             log.debug('Consumer "transportclose" event', { consumerId: id });
             this.removeConsumer(id);

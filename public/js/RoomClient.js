@@ -347,8 +347,11 @@ class RoomClient {
         this.isVideoAllowed = isVideoAllowed;
         this.isScreenAllowed = isScreenAllowed;
         this.joinRoomWithScreen = joinRoomWithScreen;
+        /** @type {Object|null} MediaSoup Transport for sending media (audio/video) to server */
         this.producerTransport = null;
+        /** @type {Object|null} MediaSoup Transport for receiving media from other peers */
         this.consumerTransport = null;
+        /** @type {Object|null} MediaSoup Device - wraps browser WebRTC API, holds RTP capabilities after loadDevice() */
         this.device = null;
 
         // DataChannel chat
@@ -984,6 +987,9 @@ class RoomClient {
             }
         });
 
+        // Event handler for 'produce' - triggered when producerTransport.produce(params) is called
+        // NOTE: params { track, appData, encodings, ... } is transformed by MediaSoup lib into { kind, appData, rtpParameters }
+        // callback/errback are injected by MediaSoup lib to resolve/reject the produce() Promise
         this.producerTransport.on('produce', async ({ kind, appData, rtpParameters }, callback, errback) => {
             try {
                 const { producer_id } = await this.socket.request('produce', {
@@ -992,6 +998,7 @@ class RoomClient {
                     appData,
                     rtpParameters,
                 });
+                // Tell MediaSoup: "Server created producer with this id, use it for local Producer object"
                 callback({ id: producer_id });
             } catch (err) {
                 errback(err);
@@ -2135,6 +2142,7 @@ class RoomClient {
     async produce(type, deviceId = null, swapCamera = false, init = false) {
         let mediaConstraints = {};
         let elem;
+        /** @type {MediaStream|null} MediaStream containing audio/video tracks from camera, mic, or screen */
         let stream;
         let audio = false;
         let video = false;
@@ -2179,9 +2187,12 @@ class RoomClient {
         console.log(`Media constraints ${type}:`, mediaConstraints);
 
         try {
+            // Reuse existing stream from lobby preview (init=true) or capture new stream (init=false)
             if (init) {
+                // Reuse initStream captured during lobby/preview phase (e.g., screen share before join)
                 stream = initStream;
             } else {
+                // Capture new stream: getDisplayMedia for screen, getUserMedia for camera/mic
                 stream = screen
                     ? await navigator.mediaDevices.getDisplayMedia(mediaConstraints)
                     : await navigator.mediaDevices.getUserMedia(mediaConstraints);
@@ -2221,6 +2232,8 @@ class RoomClient {
 
             console.log('Supported Constraints', navigator.mediaDevices.getSupportedConstraints());
 
+            // Extract single track from stream: AudioTrack for mic, VideoTrack for camera/screen
+            /** @type {MediaStreamTrack} Track to be sent via producerTransport.produce() */
             const track = audio ? stream.getAudioTracks()[0] : stream.getVideoTracks()[0];
 
             if (screen) {
@@ -2296,6 +2309,9 @@ class RoomClient {
                 params: params,
             });
 
+            // TRIGGER: This call emits 'produce' event to MediaSoup transport's handler in setupProducerTransportHandlers(), 
+            // and eventually emit 'produce' event to SocketIO server
+            // MediaSoup transforms params { track, appData, encodings,... } into { kind, appData, rtpParameters } INTERNALLY
             const producer = await this.producerTransport.produce(params);
 
             if (!producer) {

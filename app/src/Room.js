@@ -509,6 +509,11 @@ module.exports = class Room {
         return this.peers.size;
     }
 
+    /**
+     * Get all producers from other peers (excluding requesting peer to prevent echo)
+     * @param {string} socket_id - Socket ID of the requesting peer
+     * @returns {Array<{producer_id: string, producer_socket_id: string, peer_name: string, peer_info: Object, type: string}>}
+     */
     getProducerListForPeer(socket_id) {
         const producerList = [];
         this.peers.forEach((peer, peerId) => {
@@ -755,6 +760,15 @@ module.exports = class Room {
     // PRODUCE
     // ####################################################
 
+    /**
+     * Create a Producer for a peer and broadcast to other peers
+     * @param {string} socket_id - Peer's socket ID
+     * @param {string} producerTransportId - SendTransport ID to create Producer on
+     * @param {Object} rtpParameters - RTP config from client (codecs, encodings, ssrc)
+     * @param {'audio'|'video'} kind - Media kind for MediaSoup API
+     * @param {string} type - Application media type: 'audioType' | 'videoType' | 'screenType' (distinguishes webcam vs screen share)
+     * @returns {Promise<string>} Producer ID
+     */
     async produce(socket_id, producerTransportId, rtpParameters, kind, type) {
         if (!socket_id || !producerTransportId || !rtpParameters || !kind || !type) {
             throw new Error('Missing required parameters for producing media');

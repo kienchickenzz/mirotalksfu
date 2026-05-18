@@ -168,6 +168,20 @@ const image = {
     },
 };
 
+/**
+ * Media types for Producer/Consumer identification.
+ * Used in appData.mediaType to distinguish different media sources
+ *
+ * CURRENTLY USED:
+ * - audio    → microphone audio (produce via startLocalMedia)
+ * - audioTab → screen share tab audio (produce via produceScreenAudio)
+ * - video    → webcam video (produce via startLocalMedia)
+ * - screen   → screen share video (produce via startLocalMedia)
+ *
+ * RESERVED (not implemented):
+ * - camera   → virtual camera (future feature)
+ * - speaker  → speaker output routing (future feature)
+ */
 const mediaType = {
     audio: 'audioType',
     audioTab: 'audioTab',
@@ -1381,6 +1395,10 @@ class RoomClient {
         if (isBreakoutPanelOpen) refreshBreakoutPanel();
     };
 
+    /**
+     * Handle 'newProducers' event from server - create consumers for new producers
+     * @param {Array<{producer_id: string, producer_socket_id: string, peer_name: string, peer_info: Object, type: 'audioType'|'audioTab'|'videoType'|'cameraType'|'screenType'|'speakerType'}>} data
+     */
     handleNewProducers = async (data) => {
         if (data.length > 0) {
             console.log('SocketOn New producers', {
@@ -2139,6 +2157,13 @@ class RoomClient {
     // PRODUCER
     // ####################################################
 
+    /**
+     * Create a producer to send local media (audio/video/screen) to server
+     * @param {'audioType'|'audioTab'|'videoType'|'cameraType'|'screenType'|'speakerType'} type - Media type to produce
+     * @param {string|null} deviceId - Specific device ID for camera/mic selection
+     * @param {boolean} swapCamera - Whether swapping camera (front/back on mobile)
+     * @param {boolean} init - If true, reuse initStream from lobby preview instead of capturing new stream
+     */
     async produce(type, deviceId = null, swapCamera = false, init = false) {
         let mediaConstraints = {};
         let elem;
@@ -3519,6 +3544,13 @@ class RoomClient {
     // CONSUMER
     // ####################################################
 
+    /**
+     * Create a consumer to receive media from a remote producer
+     * @param {string} producer_id - Remote producer ID to consume
+     * @param {string} peer_name - Name of the peer who owns the producer
+     * @param {Object} peer_info - Peer metadata (peer_id, peer_audio, peer_video, etc.)
+     * @param {'audioType'|'audioTab'|'videoType'|'cameraType'|'screenType'|'speakerType'} type - Media type from producer.appData.mediaType
+     */
     async consume(producer_id, peer_name, peer_info, type) {
         try {
             const { consumer, stream, kind } = await this.getConsumeStream(producer_id, peer_info.peer_id, type);
@@ -3686,6 +3718,14 @@ class RoomClient {
         }
     }
 
+    /**
+     * Request server to create consumer, then create local MediaSoup consumer
+     * NOTE: Unlike produce() flow, consumer asks SERVER FIRST to get params, then creates local consumer
+     * @param {string} producerId - Remote producer ID to consume
+     * @param {string} peer_id - Peer ID who owns the producer (for stream identification)
+     * @param {'audioType'|'audioTab'|'videoType'|'cameraType'|'screenType'|'speakerType'} type - Media type
+     * @returns {Promise<{consumer: Object, stream: MediaStream, kind: 'audio'|'video'}>}
+     */
     async getConsumeStream(producerId, peer_id, type) {
         if (!this.device) {
             throw new Error('Device not initialized');
@@ -3698,6 +3738,7 @@ class RoomClient {
 
         const { rtpCapabilities } = this.device;
 
+        // 1. Ask server to create Consumer FIRST - server returns { id, kind, rtpParameters }
         const data = await this.socket.request('consume', {
             consumerTransportId: this.consumerTransport.id,
             rtpCapabilities,
@@ -3708,6 +3749,8 @@ class RoomClient {
         const { id, kind, rtpParameters } = data;
         const codecOptions = {};
         const streamId = peer_id + (type == mediaType.screen ? '-screen-sharing' : '-mic-webcam');
+
+        // 2. THEN create local consumer with params from server (triggers 'connect' event on first call)
         const consumer = await this.consumerTransport.consume({
             id,
             producerId,
@@ -3717,6 +3760,7 @@ class RoomClient {
             streamId,
         });
 
+        // 3. Wrap consumer.track in MediaStream for rendering
         const stream = new MediaStream();
         stream.addTrack(consumer.track);
 

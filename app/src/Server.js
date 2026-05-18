@@ -73,11 +73,12 @@ dev dependencies: {
  * @typedef {import('socket.io').Socket} SocketIOSocket
  * @typedef {import('mediasoup').types.Worker} MediasoupWorker
  * @typedef {import('mediasoup').types.Router} MediasoupRouter
+ * @typedef {import('mediasoup').types.RtpParameters} RtpParameters
  */
 
 const express = require('express');
 const { auth, requiresAuth } = require('express-openid-connect');
-const { withFileLock } = require('./MutexManager');
+const { withFileLock } = require('./MutexManager');``
 const { PassThrough } = require('stream');
 const { S3Client } = require('@aws-sdk/client-s3');
 const { Upload } = require('@aws-sdk/lib-storage');
@@ -2374,7 +2375,7 @@ function startServer() {
 
         // Handle 'produce' event - client wants to send media to server
         socket.on('produce', async (
-            /** @type {{ producerTransportId: string, kind: 'audio'|'video', appData: {mediaType: string}, rtpParameters: Object }} */
+            /** @type {{ producerTransportId: string, kind: 'audio'|'video', appData: {mediaType: string}, rtpParameters: RtpParameters }} */
             { producerTransportId, kind, appData, rtpParameters },
             /** @type {Function} */ callback,
             /** @type {Function} */ errback
@@ -2435,7 +2436,12 @@ function startServer() {
             }
         });
 
-        socket.on('consume', async ({ consumerTransportId, producerId, rtpCapabilities, type }, callback) => {
+        // Handle 'consume' event - client wants to receive media from a remote producer
+        socket.on('consume', async (
+            /** @type {{ consumerTransportId: string, producerId: string, rtpCapabilities: Object, type: 'audioType'|'audioTab'|'videoType'|'cameraType'|'screenType'|'speakerType' }} */
+            { consumerTransportId, producerId, rtpCapabilities, type },
+            /** @type {Function} */ callback
+        ) => {
             if (!roomExists(socket)) {
                 return callback({ error: 'Room not found' });
             }
@@ -2657,7 +2663,12 @@ function startServer() {
             }
         });
 
-        socket.on('resumeConsumer', async ({ consumer_id, type }, callback) => {
+        // Client signals it's ready to receive RTP - resume the paused consumer
+        socket.on('resumeConsumer', async (
+            /** @type {{ consumer_id: string, type: 'audioType'|'audioTab'|'videoType'|'screenType' }} */
+            { consumer_id, type },
+            /** @type {Function} */ callback
+        ) => {
             if (!roomExists(socket)) {
                 return callback({ error: 'Room not found' });
             }

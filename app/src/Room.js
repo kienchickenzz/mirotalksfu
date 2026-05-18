@@ -13,6 +13,8 @@ const { audioLevelObserverEnabled, activeSpeakerObserverEnabled } = config.media
  * @typedef {import('mediasoup').types.WebRtcServer} WebRtcServer
  * @typedef {import('mediasoup').types.AudioLevelObserver} AudioLevelObserver
  * @typedef {import('mediasoup').types.ActiveSpeakerObserver} ActiveSpeakerObserver
+ * @typedef {import('mediasoup').types.RtpCapabilities} RtpCapabilities
+ * @typedef {import('mediasoup').types.RtpParameters} RtpParameters
  * @typedef {import('socket.io').Server} SocketIOServer
  */
 
@@ -512,7 +514,7 @@ module.exports = class Room {
     /**
      * Get all producers from other peers (excluding requesting peer to prevent echo)
      * @param {string} socket_id - Socket ID of the requesting peer
-     * @returns {Array<{producer_id: string, producer_socket_id: string, peer_name: string, peer_info: Object, type: string}>}
+     * @returns {Array<{producer_id: string, producer_socket_id: string, peer_name: string, peer_info: Object, type: 'audioType'|'audioTab'|'videoType'|'cameraType'|'screenType'|'speakerType'}>}
      */
     getProducerListForPeer(socket_id) {
         const producerList = [];
@@ -526,6 +528,7 @@ module.exports = class Room {
                     producer_socket_id: peerId,
                     peer_name: peer_name,
                     peer_info: peer_info,
+                    // mediaType was set in peer.createProducer() when producer was initialized
                     type: producer.appData.mediaType,
                 });
             });
@@ -764,7 +767,7 @@ module.exports = class Room {
      * Create a Producer for a peer and broadcast to other peers
      * @param {string} socket_id - Peer's socket ID
      * @param {string} producerTransportId - SendTransport ID to create Producer on
-     * @param {Object} rtpParameters - RTP config from client (codecs, encodings, ssrc)
+     * @param {RtpParameters} rtpParameters - RTP config from client (codecs, encodings, ssrc)
      * @param {'audio'|'video'} kind - Media kind for MediaSoup API
      * @param {string} type - Application media type: 'audioType' | 'videoType' | 'screenType' (distinguishes webcam vs screen share)
      * @returns {Promise<string>} Producer ID
@@ -856,6 +859,15 @@ module.exports = class Room {
     // CONSUME
     // ####################################################
 
+    /**
+     * Create a Consumer for a peer to receive media from a remote producer
+     * @param {string} socket_id - Peer's socket ID who wants to consume
+     * @param {string} consumer_transport_id - RecvTransport ID to create Consumer on
+     * @param {string} producerId - Remote producer ID to consume
+     * @param {RtpCapabilities} rtpCapabilities - Client's RTP capabilities for codec negotiation
+     * @param {'audioType'|'audioTab'|'videoType'|'cameraType'|'screenType'|'speakerType'} type - Media type
+     * @returns {Promise<{producerId: string, id: string, kind: 'audio'|'video', rtpParameters: RtpParameters, type: string, producerPaused: boolean}>}
+     */
     async consume(socket_id, consumer_transport_id, producerId, rtpCapabilities, type) {
         if (!socket_id || !consumer_transport_id || !producerId || !rtpCapabilities || !type) {
             throw new Error('Missing required parameters for consuming media');

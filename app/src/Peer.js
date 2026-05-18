@@ -6,6 +6,8 @@
  * @typedef {import('mediasoup').types.Consumer} Consumer
  * @typedef {import('mediasoup').types.DataProducer} DataProducer
  * @typedef {import('mediasoup').types.DataConsumer} DataConsumer
+ * @typedef {import('mediasoup').types.RtpParameters} RtpParameters
+ * @typedef {import('mediasoup').types.RtpCapabilities} RtpCapabilities
  */
 
 const Logger = require('./Logger');
@@ -189,7 +191,7 @@ module.exports = class Peer {
     /**
      * Create a MediaSoup Producer on SendTransport to receive RTP from client
      * @param {string} producerTransportId - SendTransport ID from transports Map
-     * @param {Object} producer_rtpParameters - RTP config from client (codecs, encodings, ssrc)
+     * @param {RtpParameters} producer_rtpParameters - RTP config from client (codecs, encodings, ssrc)
      * @param {'audio'|'video'} producer_kind - Media kind for MediaSoup API
      * @param {string} producer_type - Application media type: 'audioType' | 'videoType' | 'screenType'
      * @returns {Promise<Producer>} MediaSoup Producer object
@@ -315,6 +317,13 @@ module.exports = class Peer {
         this.consumers.set(consumer_id, consumer);
     }
 
+    /**
+     * Create a MediaSoup Consumer on RecvTransport to send RTP to client
+     * @param {string} consumer_transport_id - RecvTransport ID from transports Map
+     * @param {string} producerId - Remote Producer ID to consume from
+     * @param {RtpCapabilities} rtpCapabilities - Client's RTP capabilities for codec negotiation
+     * @returns {Promise<{consumer: Consumer, params: Object}>} Consumer and params to send to client
+     */
     async createConsumer(consumer_transport_id, producerId, rtpCapabilities) {
         if (!consumer_transport_id || !producerId || !rtpCapabilities) {
             throw new Error('Missing required parameters for creating a consumer');

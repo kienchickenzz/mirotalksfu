@@ -191,6 +191,11 @@ const mediaType = {
     speaker: 'speakerType',
 };
 
+/**
+ * Internal event constants for RoomClient → Room.js pub/sub communication.
+ * RoomClient publishes: this.event(_EVENTS.startRec).
+ * Room.js subscribes: rc.on(RoomClient.EVENTS.startRec, callback)
+ */
 const _EVENTS = {
     openRoom: 'openRoom',
     exitRoom: 'exitRoom',
@@ -500,7 +505,22 @@ class RoomClient {
         this.consumers = new Map();
         this.producers = new Map();
         this.producerLabel = new Map();
+
+
+        /**
+         * Internal pub/sub registry for RoomClient → Room.js communication.
+         * Allows multiple subscribers per event (standard Observer pattern)
+         * Room.js subscribes via rc.on(), RoomClient publishes via this.event()
+         * @type {Map<string, Function[]>} eventName → array of callback functions
+         */
         this.eventListeners = new Map();
+        
+        // Initialize empty callback arrays for each event type
+        // Room.js will later subscribe via rc.on(RoomClient.EVENTS.xxx, callback)
+        Object.keys(_EVENTS).forEach((evt) => {
+            this.eventListeners.set(evt, []);
+        });
+
 
         this.debug = false;
         this.debug ? window.localStorage.setItem('debug', 'mediasoup*') : window.localStorage.removeItem('debug');
@@ -515,10 +535,6 @@ class RoomClient {
 
         console.log('06 ----> Load MediaSoup Client v', mediasoupClient.version);
         console.log('06.1 ----> PEER_ID', this.peer_id);
-
-        Object.keys(_EVENTS).forEach((evt) => {
-            this.eventListeners.set(evt, []);
-        });
 
         /**
          * Extends socket with request() method for Promise-based acknowledgement communication.
@@ -4297,16 +4313,35 @@ class RoomClient {
     // EXIT ROOM
     // ####################################################
 
+    /**
+     * Exit room and cleanup all resources
+     *
+     * TWO EXIT MODES:
+     * - GRACEFUL (offline=false): Notify server first via 'exitRoom' event, then cleanup
+     *   → Server calls peer.close() to cleanup server-side resources
+     *   → Server broadcasts 'removeMe' to other peers
+     *   → Then client cleanup local transports and listeners
+     *
+     * - UNGRACEFUL (offline=true): Cleanup local only, don't notify server
+     *   → Used when server is unreachable or switching rooms
+     *   → Server will cleanup via 'disconnect' event when socket closes
+     *
+     * @param {boolean} offline - If true, skip server notification (ungraceful exit)
+     */
     exit(offline = false) {
+        // 1. Stop active features before exit
         if (VideoAI.active) this.stopSession();
         if (this.rtmpFilestreamer) this.stopRTMP();
         if (this.rtmpUrlstreamer) this.stopRTMPfromURL();
         if (this.RNNoiseProcessor) this.disableRNNoiseSuppression();
 
+        // 2. Local cleanup function - close transports and remove socket listeners
         const clean = () => {
             this._isConnected = false;
+            // Close MediaSoup transports (this also closes all producers/consumers)
             if (this.consumerTransport) this.consumerTransport.close();
             if (this.producerTransport) this.producerTransport.close();
+            // Remove all socket event listeners to prevent memory leaks
             if (this.socket) {
                 this.socket.off('disconnect');
                 this.socket.off('newProducers');
@@ -4351,7 +4386,9 @@ class RoomClient {
             }
         };
 
+        // 3. Execute exit based on mode
         if (!offline) {
+            // GRACEFUL: Notify server → server cleanup → then local cleanup
             this.socket
                 .request('exitRoom')
                 .then((e) => console.log('Exit Room', e))
@@ -4361,6 +4398,7 @@ class RoomClient {
                     this.event(_EVENTS.exitRoom);
                 });
         } else {
+            // UNGRACEFUL: Local cleanup only, server handles via 'disconnect' event
             clean();
         }
     }
@@ -4531,12 +4569,24 @@ class RoomClient {
             });
     }
 
+    /**
+     * Publish event - execute all registered callbacks for this event type.
+     * Uses forEach to support multiple subscribers (standard Observer pattern)
+     * Currently each event has 1 callback, but design allows adding more without code changes
+     * @param {string} evt - Event name from _EVENTS (e.g., 'startRTMP', 'exitRoom')
+     */
     event(evt) {
         if (this.eventListeners.has(evt)) {
             this.eventListeners.get(evt).forEach((callback) => callback());
         }
     }
 
+    /**
+     * Subscribe to event - register callback to be called when event is published.
+     * Called by Room.js to listen for RoomClient state changes and update UI
+     * @param {string} evt - Event name from RoomClient.EVENTS
+     * @param {Function} callback - Function to execute when event fires
+     */
     on(evt, callback) {
         this.eventListeners.get(evt).push(callback);
     }
@@ -4725,6 +4775,11 @@ class RoomClient {
         return mediaType;
     }
 
+    /**
+     * Public accessor for event type constants
+     * Allows Room.js to subscribe: rc.on(RoomClient.EVENTS.startRTMP, callback)
+     * @returns {Object} Event name constants (e.g., { startRTMP: 'startRTMP', exitRoom: 'exitRoom', ... })
+     */
     static get EVENTS() {
         return _EVENTS;
     }
@@ -12899,44 +12954,87 @@ class RoomClient {
     // RTMP from FILE
     // ##############################################
 
+    /**
+     * Fetch list of video files available on server for RTMP streaming
+     *
+     * FLOW:
+     * 1. Client emits 'getRTMP' to server
+     * 2. Server reads /app/src/rtmp/ directory (configurable via rtmpDir)
+     * 3. Server returns array of filenames: ['video1.mp4', 'intro.webm', ...]
+     * 4. Client renders file list UI for presenter to select
+     * 5. When user clicks a file → stored in this.selectedRtmpFilename
+     * 6. User clicks Start → triggers startRTMP() with selected file
+     *
+     * Supported formats: .mp4, .webm, .ogg (validated in startRTMP)
+     */
     getRTMP() {
-        this.socket.request('getRTMP').then(function (filenames) {
-            console.log('RTMP files', filenames);
-            if (filenames.length === 0) {
-                const fileNameDiv = rc.getId('file-name');
-                fileNameDiv.textContent = 'No file found to stream';
-                //elemDisplay('startRtmpButton', false);
-            }
+        this.socket.request('getRTMP').then(
+            /**
+             * Callback: Render file list UI after server returns available files
+             * @param {string[]} filenames - Array of video filenames from server's rtmp directory
+             */
+            function (filenames) {
+                console.log('RTMP files', filenames);
+                if (filenames.length === 0) {
+                    const fileNameDiv = rc.getId('file-name');
+                    fileNameDiv.textContent = 'No file found to stream';
+                    //elemDisplay('startRtmpButton', false);
+                }
 
-            //const f = Array.from({ length: 20 }, (_, index) => `My-file-video-to-stream-to-rtmp-server ${index + 1}`);
+                //const f = Array.from({ length: 20 }, (_, index) => `My-file-video-to-stream-to-rtmp-server ${index + 1}`);
 
-            const fileListTbody = rc.getId('file-list');
-            fileListTbody.innerHTML = '';
+                // Render file list in UI table
+                const fileListTbody = rc.getId('file-list');
+                fileListTbody.innerHTML = '';
 
-            filenames.forEach((filename) => {
-                const fileRow = document.createElement('tr');
-                const fileCell = document.createElement('td');
-                fileCell.textContent = filename;
-                fileCell.className = 'file-item';
-                fileCell.onclick = () => showFilename(fileCell, filename);
-                fileRow.appendChild(fileCell);
-                fileListTbody.appendChild(fileRow);
-            });
+                filenames.forEach((filename) => {
+                    const fileRow = document.createElement('tr');
+                    const fileCell = document.createElement('td');
+                    fileCell.textContent = filename;
+                    fileCell.className = 'file-item';
+                    fileCell.onclick = () => showFilename(fileCell, filename);
+                    fileRow.appendChild(fileCell);
+                    fileListTbody.appendChild(fileRow);
+                });
 
-            function showFilename(clickedItem, filename) {
-                const fileNameDiv = rc.getId('file-name');
-                fileNameDiv.textContent = `Selected file: ${filename}`;
-                rc.selectedRtmpFilename = filename;
-                const fileItems = document.querySelectorAll('.file-item');
-                fileItems.forEach((item) => item.classList.remove('selected'));
+                /**
+                 * Handle file selection click - highlight selected item and store filename
+                 * @param {HTMLElement} clickedItem - The clicked table cell element
+                 * @param {string} filename - Selected video filename (e.g., 'BigBuckBunny.mp4')
+                 */
+                function showFilename(clickedItem, filename) {
+                    // Display selected filename in UI
+                    const fileNameDiv = rc.getId('file-name');
+                    fileNameDiv.textContent = `Selected file: ${filename}`;
 
-                if (clickedItem) {
-                    clickedItem.classList.add('selected');
+                    // Store for startRTMP() to use when user clicks Start button
+                    rc.selectedRtmpFilename = filename;
+
+                    // Remove highlight from all items, add to clicked one
+                    const fileItems = document.querySelectorAll('.file-item');
+                    fileItems.forEach((item) => item.classList.remove('selected'));
+
+                    if (clickedItem) {
+                        clickedItem.classList.add('selected');
+                    }
                 }
             }
-        });
+        );
     }
 
+    /**
+     * Start RTMP streaming from server-side video file
+     *
+     * FLOW: Client → Server → FFmpeg → RTMP Server (e.g., NodeMediaServer)
+     * 1. Validate file format (.mp4, .webm, .ogg)
+     * 2. Send 'startRTMP' to server with filename (from getRTMP dropdown)
+     * 3. Server creates RtmpFile instance, spawns FFmpeg process
+     * 4. FFmpeg transcodes file → streams to RTMP URL
+     * 5. Server returns RTMP URL for playback/sharing
+     *
+     * NOTE: This streams a pre-recorded file, NOT the live meeting content
+     * @returns {Promise<void>}
+     */
     async startRTMP() {
         if (!this.isRTMPVideoSupported(filterXSS(this.selectedRtmpFilename))) {
             this.getId('file-name').textContent = '';
@@ -12949,15 +13047,15 @@ class RoomClient {
 
         this.socket
             .request('startRTMP', {
-                file: filterXSS(this.selectedRtmpFilename),
-                peer_name: filterXSS(this.peer_name),
+                file: filterXSS(this.selectedRtmpFilename), // Selected from getRTMP() dropdown
+                peer_name: filterXSS(this.peer_name),       // For presenter authorization
                 peer_uuid: filterXSS(this.peer_uuid),
-                customRtmpUrl: this.getCustomRtmpUrl(),
+                customRtmpUrl: this.getCustomRtmpUrl(),     // Optional: stream to external RTMP (YouTube, Twitch)
             })
             .then(function (rtmp) {
-                rc.event(_EVENTS.startRTMP);
-                rc.showRTMP(rtmp, 'file');
-                rc.rtmpFileStreamer = true;
+                rc.event(_EVENTS.startRTMP);      // Notify Room.js to update UI
+                rc.showRTMP(rtmp, 'file');        // Display RTMP URL to user
+                rc.rtmpFileStreamer = true;       // Track streaming state
             });
     }
 

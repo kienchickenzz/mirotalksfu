@@ -201,10 +201,27 @@ module.exports = class Room {
         return this.rtmpStreaming.isRtmpFileStreamerActive();
     }
 
+    /**
+     * Get list of video files available for RTMP streaming (proxy to RtmpStreaming)
+     * FLOW: Client getRTMP() → Server socket.on('getRTMP') → room.getRTMP() → rtmpStreaming.getRTMP()
+     * @param {string} dir - Relative path to rtmp directory (e.g., '../rtmp')
+     * @returns {Promise<string[]>} Array of filenames: ['video1.mp4', 'intro.webm', ...]
+     */
     async getRTMP(dir) {
         return this.rtmpStreaming.getRTMP(dir);
     }
 
+    /**
+     * Start RTMP streaming from server-side video file (proxy to RtmpStreaming)
+     * FLOW: Server socket.on('startRTMP') → here → RtmpStreaming → RtmpFile (FFmpeg)
+     * @param {string} socket_id - Socket ID for sending end/error callbacks
+     * @param {Room} room - Room instance for callback context
+     * @param {string} host - RTMP server host (localhost or hostname)
+     * @param {number} port - RTMP server port (default 1935)
+     * @param {string} file - Path to video file on server
+     * @param {string|null} customRtmpUrl - Optional custom RTMP destination (YouTube/Twitch)
+     * @returns {Promise<string|false>} RTMP URL if success, false if failed
+     */
     async startRTMP(socket_id, room, host, port, file, customRtmpUrl) {
         return this.rtmpStreaming.startRTMP(socket_id, room, host, port, file, customRtmpUrl);
     }

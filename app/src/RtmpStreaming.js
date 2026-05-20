@@ -18,7 +18,13 @@ class RtmpStreaming {
         this.rtmp = config?.media?.rtmp || false;
     }
 
-    // Proxy method for RtmpFile/RtmpUrl callbacks
+    /**
+     * Proxy method for RtmpFile/RtmpUrl to send events back to client.
+     * FLOW: RtmpFile.handleEnd() → here → Room.send() → Socket.IO emit to client
+     * @param {string} socket_id - Target socket ID
+     * @param {'endRTMP'|'errorRTMP'|'endRTMPfromURL'|'errorRTMPfromURL'} action - Event name
+     * @param {Object} data - Event payload (e.g., { rtmpUrl } or { message })
+     */
     send(socket_id, action, data) {
         this.room.send(socket_id, action, data);
     }
@@ -31,15 +37,25 @@ class RtmpStreaming {
         return this.rtmpFileStreamer;
     }
 
+    /**
+     * Get list of video files available for RTMP streaming
+     *
+     * FLOW: Client getRTMP() → Server socket.on('getRTMP') → room.getRTMP() → here
+     *
+     * @param {string} dir - Relative path to rtmp directory (default: '../rtmp')
+     * @returns {Promise<string[]>} Array of filenames in the directory
+     */
     async getRTMP(dir = '../rtmp') {
         const folderPath = path.join(__dirname, dir);
         log.debug('[getRTMP] Files from dir', folderPath);
 
         try {
+            // Create directory if not exists (first time setup)
             if (!fs.existsSync(folderPath)) {
                 log.debug('[getRTMP] Dir not exists going to create', folderPath);
                 fs.mkdirSync(folderPath, { recursive: true });
             }
+            // Read all files in directory (sync for simplicity)
             const files = fs.readdirSync(folderPath);
             log.debug('[getRTMP] Files', files);
             return files;
@@ -49,6 +65,19 @@ class RtmpStreaming {
         }
     }
 
+    /**
+     * Start RTMP streaming from server-side video file via FFmpeg
+     *
+     * FLOW: Room.startRTMP() → here → RtmpFile.start() → FFmpeg → RTMP Server
+     *
+     * @param {string} socket_id - Socket ID for sending end/error callbacks to client
+     * @param {RtmpStreaming} room - RtmpStreaming instance (this) for callback context
+     * @param {string} host - RTMP server host
+     * @param {number} port - RTMP server port
+     * @param {string} file - Relative path to video file from __dirname
+     * @param {string|null} customRtmpUrl - Optional custom RTMP URL (YouTube/Twitch)
+     * @returns {Promise<string|false>} Generated RTMP URL if success, false if failed
+     */
     async startRTMP(
         socket_id,
         room,
@@ -57,11 +86,13 @@ class RtmpStreaming {
         file = '../rtmp/BigBuckBunny.mp4',
         customRtmpUrl = null
     ) {
+        // SECURITY CHECK 1: RTMP feature must be enabled in config
         if (!this.rtmp || !this.rtmp.enabled) {
             log.debug('[startRTMP] Server is not enabled or missing the config');
             return false;
         }
 
+        // SECURITY CHECK 2: Prevent concurrent streaming (one file stream at a time per room)
         if (this.rtmpFileStreamer) {
             log.debug('[startRTMP] Already in progress');
             return false;
@@ -70,11 +101,13 @@ class RtmpStreaming {
         const rtmpDir = path.resolve(__dirname, this.rtmp.dir || '../rtmp');
         const inputFilePath = path.resolve(__dirname, file);
 
+        // SECURITY CHECK 3: Path traversal prevention - file must be inside rtmpDir
         if (!inputFilePath.startsWith(rtmpDir)) {
             log.error(`[startRTMP] Path traversal blocked: ${inputFilePath}`);
             return false;
         }
 
+        // SECURITY CHECK 4: File must exist on server
         if (!fs.existsSync(inputFilePath)) {
             log.error(`[startRTMP] File not found: ${inputFilePath}`);
             return false;

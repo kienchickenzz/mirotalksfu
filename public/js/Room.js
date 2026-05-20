@@ -4059,6 +4059,10 @@ function loadSettingsFromLocalStorage() {
 // ROOM CLIENT EVENT LISTNERS
 // ####################################################
 
+/**
+ * Subscribe to RoomClient events to update UI when media state changes.
+ * RoomClient handles WebRTC/MediaSoup logic, Room.js handles UI updates
+ */
 function handleRoomClientEvents() {
     rc.on(RoomClient.EVENTS.startRec, () => {
         console.log('Room event: Client start recoding');

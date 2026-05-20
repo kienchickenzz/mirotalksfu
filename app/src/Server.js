@@ -3817,17 +3817,35 @@ function startServer() {
             }
         });
 
-        socket.on('getRTMP', async ({}, cb) => {
+        /**
+         * Get list of video files available for RTMP streaming
+         * Files are stored in server's rtmp directory (default: /app/src/rtmp/)
+         * Presenter can select a file to stream via FFmpeg to RTMP server
+         */
+        socket.on('getRTMP', async (
+            /** @type {Object} */ {},
+            /** @type {Function} */ cb
+        ) => {
             if (!roomExists(socket)) return;
 
             const room = getRoom(socket);
 
+            // Read rtmp directory and return list of filenames
             const rtmpFiles = await room.getRTMP(rtmpDir);
 
             cb(rtmpFiles);
         });
 
-        socket.on('startRTMP', async (dataObject, cb) => {
+        /**
+         * Start RTMP streaming from server-side video file
+         * FLOW: Client startRTMP() → here → room.startRTMP() → RtmpFile (FFmpeg)
+         */
+        socket.on('startRTMP', async (
+            /** @type {{ peer_name: string, peer_uuid: string, file: string, customRtmpUrl?: string }} */
+            dataObject,
+            /** @type {(rtmpUrl: string|false) => void} */ 
+            cb
+        ) => {
             if (!roomExists(socket)) return;
 
             const totalActive = getRtmpTotalActiveStreamsCount();

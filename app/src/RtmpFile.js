@@ -1,22 +1,42 @@
 'use strict';
 
-const config = require('./config');
-const ffmpegPath = config.media?.rtmp?.ffmpegPath || '/usr/bin/ffmpeg';
+/** @typedef {import('fluent-ffmpeg').FfmpegCommand} FfmpegCommand */
+/** @typedef {import('fs').ReadStream} ReadStream */
+
+/** @typedef {import('./RtmpStreaming')} RtmpStreaming */
+
+
 const ffmpeg = require('fluent-ffmpeg');
 ffmpeg.setFfmpegPath(ffmpegPath);
 
+const config = require('./config');
 const Logger = require('./Logger');
+
+const ffmpegPath = config.media?.rtmp?.ffmpegPath || '/usr/bin/ffmpeg';
 const log = new Logger('RtmpFile');
 
 class RtmpFile {
-    constructor(socket_id = false, room = false) {
+    /**
+     * @param {string} socket_id - Socket ID for sending callbacks to client
+     * @param {RtmpStreaming} rtmpStreaming - RtmpStreaming instance (provides send() method and rtmpFileStreamer property)
+     */
+    constructor(socket_id, rtmpStreaming) {
         this.socketId = socket_id;
-        this.room = room;
+        this.rtmpStreaming = rtmpStreaming;
         this.rtmpUrl = '';
+
+        /** @type {FfmpegCommand|null} FFmpeg process handle for streaming */
         this.ffmpegProcess = null;
+        
         this.stopping = false;
     }
 
+    /**
+     * Start FFmpeg transcoding from file stream to RTMP
+     * @param {ReadStream} inputStream - File read stream from fs.createReadStream()
+     * @param {string} rtmpUrl - RTMP destination URL (e.g., rtmp://localhost:1935/live/stream)
+     * @returns {Promise<boolean>} true if started, false if already running or error
+     */
     async start(inputStream, rtmpUrl) {
         if (this.ffmpegProcess) {
             log.debug('Streaming is already in progress');
@@ -85,15 +105,15 @@ class RtmpFile {
     }
 
     handleEnd() {
-        if (!this.room) return;
-        this.room.send(this.socketId, 'endRTMP', { rtmpUrl: this.rtmpUrl });
-        this.room.rtmpFileStreamer = null;
+        if (!this.rtmpStreaming) return;
+        this.rtmpStreaming.send(this.socketId, 'endRTMP', { rtmpUrl: this.rtmpUrl });
+        this.rtmpStreaming.rtmpFileStreamer = null;
     }
 
     handleError(message, stdout, stderr) {
-        if (!this.room) return;
-        this.room.send(this.socketId, 'errorRTMP', { message });
-        this.room.rtmpFileStreamer = null;
+        if (!this.rtmpStreaming) return;
+        this.rtmpStreaming.send(this.socketId, 'errorRTMP', { message });
+        this.rtmpStreaming.rtmpFileStreamer = null;
         log.error('Error: ' + message, { stdout, stderr });
     }
 }

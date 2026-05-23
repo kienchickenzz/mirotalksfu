@@ -113,19 +113,33 @@ function attachMediaStream(stream) {
     videoElement.controls = false;
 }
 
+
+/**
+ * Initialize RTMP stream - either to local NodeMediaServer or external service (YouTube/Twitch)
+ * @param {MediaStream} stream - MediaStream from getUserMedia/getDisplayMedia
+ * @returns {Promise<boolean>} true if initialization successful
+ */
 async function initRTMP(stream) {
     const apiSecret = apiSecretInput.value;
+
+    const isExternalRtmp = !!customRtmpUrl;
+
+    // Build payload based on destination type - NodeMediaServer or external service (YouTube/Twitch/Facebook)
+    const payload = isExternalRtmp ? { customRtmpUrl } : null;
+    const headers = {
+        authorization: apiSecret,
+        ...(isExternalRtmp ? { 'Content-Type': 'application/json' } : {}),
+    };
+
     try {
-        const response = await axios.post(`/initRTMP`, customRtmpUrl ? { customRtmpUrl } : null, {
-            headers: {
-                authorization: apiSecret,
-                ...(customRtmpUrl ? { 'Content-Type': 'application/json' } : {}),
-            },
-        });
-        const { rtmp, rtmpStreamKey } = response.data;
-        console.log('initRTMP response:', { res: response, rtmp: rtmp });
-        rtmpInput.value = rtmp;
+        const response = await axios.post('/initRTMP', payload, { headers });
+        const { rtmp, rtmpStreamKey } = /** @type {{rtmp: string, rtmpStreamKey: string}} */ (response.data);
+
+        console.log('initRTMP response:', { isExternalRtmp, rtmp, rtmpStreamKey });
+
+        rtmpInput.value = rtmp; // Display the RTMP URL to user - Purely for UX/UI
         rtmpKey = rtmpStreamKey || new URL(rtmp).pathname.split('/').pop();
+
         toggleButtons(true);
         stopButton.disabled = false; // Enable stopButton on successful initialization
         return true;
@@ -133,10 +147,7 @@ async function initRTMP(stream) {
         if (error.response) {
             const { status, data } = error.response;
             showPopup(data, 'info');
-            console.log('Init RTMP', {
-                status,
-                data,
-            });
+            console.log('Init RTMP failed', { status, data });
         } else {
             showError('Error initializing RTMP. Please try again.');
             console.error('Error initializing RTMP:', error);
@@ -189,6 +200,7 @@ async function streamRTMPChunk(data) {
         }
     }
 }
+
 
 function stopStreaming() {
     if (mediaRecorder) {

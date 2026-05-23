@@ -1323,12 +1323,15 @@ function startServer() {
             return res.status(400).send('RTMP server is not enabled or missing the config');
         }
 
-        const customRtmpUrl = req.body?.customRtmpUrl || null;
-
+        /** @type {string} RTMP destination URL */
         let rtmp;
+        /** @type {string} Unique stream key for lookup in streams Map */
         let rtmpStreamKey;
 
-        if (customRtmpUrl && rtmpCfg.allowCustomUrl) {
+        const customRtmpUrl = req.body?.customRtmpUrl || null;
+        
+        const isExternalRtmp = !!(customRtmpUrl && rtmpCfg.allowCustomUrl);
+        if (isExternalRtmp) { // External RTMP: YouTube, Twitch, Facebook, etc.
             try {
                 const parsed = new URL(customRtmpUrl);
                 if (!['rtmp:', 'rtmps:'].includes(parsed.protocol)) {
@@ -1339,8 +1342,8 @@ function startServer() {
             }
             rtmp = customRtmpUrl;
             rtmpStreamKey = uuidv4();
-            log.info('initRTMP using custom RTMP URL', { rtmp });
-        } else {
+            log.info('initRTMP [external]', { rtmp, rtmpStreamKey });
+        } else { // Local NodeMediaServer: self-hosted RTMP server
             const domainName = config?.integrations?.ngrok?.enabled
                 ? 'localhost'
                 : req.headers.host?.split(':')[0] || 'localhost';
@@ -1358,11 +1361,8 @@ function startServer() {
                 ? generateRTMPUrl(rtmpServerURL, rtmpServerPath, rtmpServerSecret, expirationHours)
                 : rtmpServerURL + rtmpServerPath;
 
-            log.info('initRTMP', {
-                headers: req.headers,
-                rtmpUseNodeMediaServer: rtmpUseNodeMediaServer,
-                rtmpServer,
-                rtmpServerSecret,
+            log.info('initRTMP [local]', {
+                rtmpUseNodeMediaServer,
                 rtmpServerURL,
                 rtmpServerPath,
                 expirationHours,

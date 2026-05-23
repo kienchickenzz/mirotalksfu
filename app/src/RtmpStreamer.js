@@ -1,15 +1,21 @@
 'use strict';
 
-const config = require('./config');
 const { PassThrough } = require('stream');
+
 const ffmpeg = require('fluent-ffmpeg');
+
+const config = require('./config');
+const Logger = require('./Logger');
+
+const log = new Logger('RtmpStreamer');
+
 const ffmpegPath = config.media?.rtmp?.ffmpegPath || '/usr/bin/ffmpeg';
 ffmpeg.setFfmpegPath(ffmpegPath);
 
-const Logger = require('./Logger');
-const log = new Logger('RtmpStreamer');
 
+/** Worker that streams browser camera/screen to RTMP server via FFmpeg (input: WebM chunks via HTTP POST → PassThrough → FFmpeg → RTMP) */
 class RtmpStreamer {
+    
     constructor(rtmpUrl, rtmpKey) {
         this.rtmpUrl = rtmpUrl;
         this.rtmpKey = rtmpKey;

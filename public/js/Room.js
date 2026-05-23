@@ -2699,10 +2699,10 @@ function handleButtons() {
             userLog('warning', 'Please select the Video file to stream', 'top-end', 6000);
             return;
         }
-        rc.startRTMP();
+        rc.startRTMPfromFile();
     };
     stopRtmpButton.onclick = () => {
-        rc.stopRTMP();
+        rc.stopRTMPfromFile();
     };
     streamerRtmpButton.onclick = () => {
         rc.openRTMPStreamer();
@@ -4270,18 +4270,18 @@ function handleRoomClientEvents() {
             hostOnlyRecording = false;
         }
     });
-    rc.on(RoomClient.EVENTS.startRTMP, () => {
-        console.log('Room event: RTMP started');
+    rc.on(RoomClient.EVENTS.startRTMPfromFile, () => {
+        console.log('Room event: RTMP from file started');
         hide(startRtmpButton);
         show(stopRtmpButton);
     });
-    rc.on(RoomClient.EVENTS.stopRTMP, () => {
-        console.log('Room event: RTMP stopped');
+    rc.on(RoomClient.EVENTS.stopRTMPfromFile, () => {
+        console.log('Room event: RTMP from file stopped');
         hide(stopRtmpButton);
         show(startRtmpButton);
     });
-    rc.on(RoomClient.EVENTS.endRTMP, () => {
-        console.log('Room event: RTMP ended');
+    rc.on(RoomClient.EVENTS.endRTMPfromFile, () => {
+        console.log('Room event: RTMP from file ended');
         hide(stopRtmpButton);
         show(startRtmpButton);
     });

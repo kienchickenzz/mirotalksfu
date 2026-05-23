@@ -141,11 +141,11 @@ module.exports = class Room {
                 hostOnlyRecording: this._hostOnlyRecording,
             },
             rtmp: {
-                enabled: this.rtmpStreaming.rtmp && this.rtmpStreaming.rtmp.enabled,
-                fromFile: this.rtmpStreaming.rtmp && this.rtmpStreaming.rtmp.fromFile,
-                fromUrl: this.rtmpStreaming.rtmp && this.rtmpStreaming.rtmp.fromUrl,
-                fromStream: this.rtmpStreaming.rtmp && this.rtmpStreaming.rtmp.fromStream,
-                allowCustomUrl: this.rtmpStreaming.rtmp && this.rtmpStreaming.rtmp.allowCustomUrl,
+                enabled: this.rtmpStreaming.rtmpConfig && this.rtmpStreaming.rtmpConfig.enabled,
+                fromFile: this.rtmpStreaming.rtmpConfig && this.rtmpStreaming.rtmpConfig.fromFile,
+                fromUrl: this.rtmpStreaming.rtmpConfig && this.rtmpStreaming.rtmpConfig.fromUrl,
+                fromStream: this.rtmpStreaming.rtmpConfig && this.rtmpStreaming.rtmpConfig.fromStream,
+                allowCustomUrl: this.rtmpStreaming.rtmpConfig && this.rtmpStreaming.rtmpConfig.allowCustomUrl,
             },
             hostProtected: this.isHostProtected,
             moderator: this._moderator,
@@ -213,7 +213,7 @@ module.exports = class Room {
 
     /**
      * Start RTMP streaming from server-side video file (proxy to RtmpStreaming)
-     * FLOW: Server socket.on('startRTMP') → here → RtmpStreaming → RtmpFile (FFmpeg)
+     * FLOW: Server socket.on('startRTMPfromFile') → here → RtmpStreaming → RtmpFile (FFmpeg)
      * @param {string} socket_id - Socket ID for sending end/error callbacks
      * @param {Room} room - Room instance for callback context
      * @param {string} host - RTMP server host (localhost or hostname)
@@ -222,12 +222,12 @@ module.exports = class Room {
      * @param {string|null} customRtmpUrl - Optional custom RTMP destination (YouTube/Twitch)
      * @returns {Promise<string|false>} RTMP URL if success, false if failed
      */
-    async startRTMP(socket_id, room, host, port, file, customRtmpUrl) {
-        return this.rtmpStreaming.startRTMP(socket_id, room, host, port, file, customRtmpUrl);
+    async startRTMPfromFile(socket_id, room, host, port, file, customRtmpUrl) {
+        return this.rtmpStreaming.startRTMPfromFile(socket_id, room, host, port, file, customRtmpUrl);
     }
 
-    stopRTMP() {
-        return this.rtmpStreaming.stopRTMP();
+    stopRTMPfromFile() {
+        return this.rtmpStreaming.stopRTMPfromFile();
     }
 
     isRtmpUrlStreamerActive() {

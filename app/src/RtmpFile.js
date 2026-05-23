@@ -7,15 +7,17 @@
 
 
 const ffmpeg = require('fluent-ffmpeg');
-ffmpeg.setFfmpegPath(ffmpegPath);
 
 const config = require('./config');
 const Logger = require('./Logger');
 
-const ffmpegPath = config.media?.rtmp?.ffmpegPath || '/usr/bin/ffmpeg';
 const log = new Logger('RtmpFile');
+const ffmpegPath = config.media?.rtmp?.ffmpegPath || '/usr/bin/ffmpeg';
+ffmpeg.setFfmpegPath(ffmpegPath);
 
+/** Worker that streams local video file to RTMP server via FFmpeg (input: fs.ReadStream → FFmpeg → RTMP) */
 class RtmpFile {
+    
     /**
      * @param {string} socket_id - Socket ID for sending callbacks to client
      * @param {RtmpStreaming} rtmpStreaming - RtmpStreaming instance (provides send() method and rtmpFileStreamer property)
@@ -106,13 +108,13 @@ class RtmpFile {
 
     handleEnd() {
         if (!this.rtmpStreaming) return;
-        this.rtmpStreaming.send(this.socketId, 'endRTMP', { rtmpUrl: this.rtmpUrl });
+        this.rtmpStreaming.send(this.socketId, 'endRTMPfromFile', { rtmpUrl: this.rtmpUrl });
         this.rtmpStreaming.rtmpFileStreamer = null;
     }
 
     handleError(message, stdout, stderr) {
         if (!this.rtmpStreaming) return;
-        this.rtmpStreaming.send(this.socketId, 'errorRTMP', { message });
+        this.rtmpStreaming.send(this.socketId, 'errorRTMPfromFile', { message });
         this.rtmpStreaming.rtmpFileStreamer = null;
         log.error('Error: ' + message, { stdout, stderr });
     }

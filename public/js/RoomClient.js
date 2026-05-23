@@ -223,9 +223,9 @@ const _EVENTS = {
     roomUnlock: 'roomUnlock',
     hostOnlyRecordingOn: 'hostOnlyRecordingOn',
     hostOnlyRecordingOff: 'hostOnlyRecordingOff',
-    startRTMP: 'startRTMP',
-    stopRTMP: 'stopRTMP',
-    endRTMP: 'endRTMP',
+    startRTMPfromFile: 'startRTMPfromFile',
+    stopRTMPfromFile: 'stopRTMPfromFile',
+    endRTMPfromFile: 'endRTMPfromFile',
     startRTMPfromURL: 'startRTMPfromURL',
     stopRTMPfromURL: 'stopRTMPfromURL',
     endRTMPfromURL: 'endRTMPfromURL',
@@ -1320,8 +1320,8 @@ class RoomClient {
         this.socket.on('updateRoomModerator', this.handleUpdateRoomModeratorData);
         this.socket.on('updateRoomModeratorALL', this.handleUpdateRoomModeratorALLData);
         this.socket.on('recordingAction', this.handleRecordingActionData);
-        this.socket.on('endRTMP', this.handleEndRTMP);
-        this.socket.on('errorRTMP', this.handleErrorRTMP);
+        this.socket.on('endRTMPfromFile', this.handleEndRTMPfromFile);
+        this.socket.on('errorRTMPfromFile', this.handleErrorRTMPfromFile);
         this.socket.on('endRTMPfromURL', this.handleEndRTMPfromURL);
         this.socket.on('errorRTMPfromURL', this.handleErrorRTMPfromURL);
         this.socket.on('updatePolls', this.handleUpdatePolls);
@@ -1560,12 +1560,12 @@ class RoomClient {
         this.handleRecordingAction(data);
     };
 
-    handleEndRTMP = (data) => {
-        this.endRTMP(data);
+    handleEndRTMPfromFile = (data) => {
+        this.endRTMPfromFile(data);
     };
 
-    handleErrorRTMP = (data) => {
-        this.errorRTMP(data);
+    handleErrorRTMPfromFile = (data) => {
+        this.errorRTMPfromFile(data);
     };
 
     handleEndRTMPfromURL = (data) => {
@@ -4331,7 +4331,7 @@ class RoomClient {
     exit(offline = false) {
         // 1. Stop active features before exit
         if (VideoAI.active) this.stopSession();
-        if (this.rtmpFilestreamer) this.stopRTMP();
+        if (this.rtmpFilestreamer) this.stopRTMPfromFile();
         if (this.rtmpUrlstreamer) this.stopRTMPfromURL();
         if (this.RNNoiseProcessor) this.disableRNNoiseSuppression();
 
@@ -4371,8 +4371,8 @@ class RoomClient {
                 this.socket.off('updateRoomModerator');
                 this.socket.off('updateRoomModeratorALL');
                 this.socket.off('recordingAction');
-                this.socket.off('endRTMP');
-                this.socket.off('errorRTMP');
+                this.socket.off('endRTMPfromFile');
+                this.socket.off('errorRTMPfromFile');
                 this.socket.off('endRTMPfromURL');
                 this.socket.off('errorRTMPfromURL');
                 this.socket.off('updatePolls');
@@ -4573,7 +4573,7 @@ class RoomClient {
      * Publish event - execute all registered callbacks for this event type.
      * Uses forEach to support multiple subscribers (standard Observer pattern)
      * Currently each event has 1 callback, but design allows adding more without code changes
-     * @param {string} evt - Event name from _EVENTS (e.g., 'startRTMP', 'exitRoom')
+     * @param {string} evt - Event name from _EVENTS (e.g., 'startRTMPfromFile', 'exitRoom')
      */
     event(evt) {
         if (this.eventListeners.has(evt)) {
@@ -4777,8 +4777,8 @@ class RoomClient {
 
     /**
      * Public accessor for event type constants
-     * Allows Room.js to subscribe: rc.on(RoomClient.EVENTS.startRTMP, callback)
-     * @returns {Object} Event name constants (e.g., { startRTMP: 'startRTMP', exitRoom: 'exitRoom', ... })
+     * Allows Room.js to subscribe: rc.on(RoomClient.EVENTS.startRTMPfromFile, callback)
+     * @returns {Object} Event name constants (e.g., { startRTMPfromFile: 'startRTMPfromFile', exitRoom: 'exitRoom', ... })
      */
     static get EVENTS() {
         return _EVENTS;
@@ -12963,9 +12963,9 @@ class RoomClient {
      * 3. Server returns array of filenames: ['video1.mp4', 'intro.webm', ...]
      * 4. Client renders file list UI for presenter to select
      * 5. When user clicks a file → stored in this.selectedRtmpFilename
-     * 6. User clicks Start → triggers startRTMP() with selected file
+     * 6. User clicks Start → triggers startRTMPfromFile() with selected file
      *
-     * Supported formats: .mp4, .webm, .ogg (validated in startRTMP)
+     * Supported formats: .mp4, .webm, .ogg (validated in startRTMPfromFile)
      */
     getRTMP() {
         this.socket.request('getRTMP').then(
@@ -13007,7 +13007,7 @@ class RoomClient {
                     const fileNameDiv = rc.getId('file-name');
                     fileNameDiv.textContent = `Selected file: ${filename}`;
 
-                    // Store for startRTMP() to use when user clicks Start button
+                    // Store for startRTMPfromFile() to use when user clicks Start button
                     rc.selectedRtmpFilename = filename;
 
                     // Remove highlight from all items, add to clicked one
@@ -13027,7 +13027,7 @@ class RoomClient {
      *
      * FLOW: Client → Server → FFmpeg → RTMP Server (e.g., NodeMediaServer)
      * 1. Validate file format (.mp4, .webm, .ogg)
-     * 2. Send 'startRTMP' to server with filename (from getRTMP dropdown)
+     * 2. Send 'startRTMPfromFile' to server with filename (from getRTMP dropdown)
      * 3. Server creates RtmpFile instance, spawns FFmpeg process
      * 4. FFmpeg transcodes file → streams to RTMP URL
      * 5. Server returns RTMP URL for playback/sharing
@@ -13035,7 +13035,7 @@ class RoomClient {
      * NOTE: This streams a pre-recorded file, NOT the live meeting content
      * @returns {Promise<void>}
      */
-    async startRTMP() {
+    async startRTMPfromFile() {
         if (!this.isRTMPVideoSupported(filterXSS(this.selectedRtmpFilename))) {
             this.getId('file-name').textContent = '';
             return this.userLog(
@@ -13046,47 +13046,47 @@ class RoomClient {
         }
 
         this.socket
-            .request('startRTMP', {
+            .request('startRTMPfromFile', {
                 file: filterXSS(this.selectedRtmpFilename), // Selected from getRTMP() dropdown
                 peer_name: filterXSS(this.peer_name),       // For presenter authorization
                 peer_uuid: filterXSS(this.peer_uuid),
                 customRtmpUrl: this.getCustomRtmpUrl(),     // Optional: stream to external RTMP (YouTube, Twitch)
             })
             .then(function (rtmp) {
-                rc.event(_EVENTS.startRTMP);      // Notify Room.js to update UI
+                rc.event(_EVENTS.startRTMPfromFile);      // Notify Room.js to update UI
                 rc.showRTMP(rtmp, 'file');        // Display RTMP URL to user
                 rc.rtmpFileStreamer = true;       // Track streaming state
             });
     }
 
-    stopRTMP() {
+    stopRTMPfromFile() {
         if (this.rtmpFileStreamer) {
-            this.socket.request('stopRTMP');
+            this.socket.request('stopRTMPfromFile');
             this.rtmpFileStreamer = false;
             this.cleanRTMPUrl();
             console.log('RTMP STOP');
-            this.event(_EVENTS.stopRTMP);
+            this.event(_EVENTS.stopRTMPfromFile);
         }
     }
 
-    endRTMP(data) {
+    endRTMPfromFile(data) {
         const rtmpMessage = `${data.rtmpUrl} processing finished!`;
         this.rtmpFileStreamer = false;
         this.userLog('info', rtmpMessage, 'top-end');
         console.log(rtmpMessage);
         this.cleanRTMPUrl();
-        this.socket.request('endOrErrorRTMP');
-        this.event(_EVENTS.endRTMP);
+        this.socket.request('endOrErrorRTMPfromFile');
+        this.event(_EVENTS.endRTMPfromFile);
     }
 
-    errorRTMP(data) {
+    errorRTMPfromFile(data) {
         const rtmpError = `${data.message}`;
         this.rtmpFileStreamer = false;
         this.userLog('error', rtmpError, 'top-end');
         console.error(rtmpError);
         this.cleanRTMPUrl();
-        this.socket.request('endOrErrorRTMP');
-        this.event(_EVENTS.endRTMP);
+        this.socket.request('endOrErrorRTMPfromFile');
+        this.event(_EVENTS.endRTMPfromFile);
     }
 
     // ##############################################

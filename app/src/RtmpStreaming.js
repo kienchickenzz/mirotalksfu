@@ -1,28 +1,64 @@
 'use strict';
 
-const config = require('./config');
-const crypto = require('crypto-js');
-const RtmpFile = require('./RtmpFile');
-const RtmpUrl = require('./RtmpUrl');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+
+const crypto = require('crypto-js');
+
+/** @type {typeof import('./config.template')} */
+const config = require('./config');
+
+/**
+ * @typedef {Object} RtmpConfig
+ * @property {boolean} enabled - RTMP feature enabled
+ * @property {boolean} fromFile - Allow streaming from server files
+ * @property {boolean} fromUrl - Allow streaming from URL
+ * @property {boolean} fromStream - Allow streaming from WebRTC
+ * @property {number} maxStreams - Maximum concurrent streams
+ * @property {boolean} allowCustomUrl - Allow custom RTMP destinations (YouTube/Twitch)
+ * @property {boolean} useNodeMediaServer - Use signed URLs for NodeMediaServer
+ * @property {string} server - RTMP server URL (e.g., rtmp://localhost:1935)
+ * @property {string} appName - RTMP app name (e.g., 'live')
+ * @property {string} streamKey - Stream key (auto UUID if empty)
+ * @property {string} secret - Secret for signed URL generation
+ * @property {string} apiSecret - API secret for WebRTC→RTMP
+ * @property {number} expirationHours - Signed URL expiry hours
+ * @property {string} dir - Video files directory
+ * @property {string} ffmpegPath - FFmpeg binary path
+ * @property {string} platform - OS platform
+ */
+
+const RtmpFile = require('./RtmpFile');
+const RtmpUrl = require('./RtmpUrl');
+
 const Logger = require('./Logger');
 const log = new Logger('RtmpStreaming');
 
+/** @typedef {import('./Room')} Room */
+
+/** Orchestrator for file/URL RTMP streaming - manages RtmpFile and RtmpUrl workers, validates permissions, generates signed URLs */
 class RtmpStreaming {
+
+    /**
+     * @param {Room} room - Room instance for sending events back to clients
+     */
     constructor(room) {
         this.room = room;
+
+        /** @type {RtmpFile|null} Active file streamer instance */
         this.rtmpFileStreamer = null;
         this.rtmpUrlStreamer = null;
-        this.rtmp = config?.media?.rtmp || false;
+
+        /** @type {RtmpConfig|null} RTMP configuration from config.media.rtmp */
+        this.rtmpConfig = config?.media?.rtmp || null;
     }
 
     /**
      * Proxy method for RtmpFile/RtmpUrl to send events back to client.
      * FLOW: RtmpFile.handleEnd() → here → Room.send() → Socket.IO emit to client
      * @param {string} socket_id - Target socket ID
-     * @param {'endRTMP'|'errorRTMP'|'endRTMPfromURL'|'errorRTMPfromURL'} action - Event name
+     * @param {'endRTMPfromFile'|'errorRTMPfromFile'|'endRTMPfromURL'|'errorRTMPfromURL'} action - Event name
      * @param {Object} data - Event payload (e.g., { rtmpUrl } or { message })
      */
     send(socket_id, action, data) {
@@ -68,7 +104,7 @@ class RtmpStreaming {
     /**
      * Start RTMP streaming from server-side video file via FFmpeg
      *
-     * FLOW: Room.startRTMP() → here → RtmpFile.start() → FFmpeg → RTMP Server
+     * FLOW: Room.startRTMPfromFile() → here → RtmpFile.start() → FFmpeg → RTMP Server
      *
      * @param {string} socket_id - Socket ID for sending end/error callbacks to client
      * @param {RtmpStreaming} room - RtmpStreaming instance (this) for callback context
@@ -78,7 +114,7 @@ class RtmpStreaming {
      * @param {string|null} customRtmpUrl - Optional custom RTMP URL (YouTube/Twitch)
      * @returns {Promise<string|false>} Generated RTMP URL if success, false if failed
      */
-    async startRTMP(
+    async startRTMPfromFile(
         socket_id,
         room,
         host = 'localhost',
@@ -87,33 +123,33 @@ class RtmpStreaming {
         customRtmpUrl = null
     ) {
         // SECURITY CHECK 1: RTMP feature must be enabled in config
-        if (!this.rtmp || !this.rtmp.enabled) {
-            log.debug('[startRTMP] Server is not enabled or missing the config');
+        if (!this.rtmpConfig || !this.rtmpConfig.enabled) {
+            log.debug('[startRTMPfromFile] Server is not enabled or missing the config');
             return false;
         }
 
         // SECURITY CHECK 2: Prevent concurrent streaming (one file stream at a time per room)
         if (this.rtmpFileStreamer) {
-            log.debug('[startRTMP] Already in progress');
+            log.debug('[startRTMPfromFile] Already in progress');
             return false;
         }
 
-        const rtmpDir = path.resolve(__dirname, this.rtmp.dir || '../rtmp');
+        const rtmpDir = path.resolve(__dirname, this.rtmpConfig.dir || '../rtmp');
         const inputFilePath = path.resolve(__dirname, file);
 
         // SECURITY CHECK 3: Path traversal prevention - file must be inside rtmpDir
         if (!inputFilePath.startsWith(rtmpDir)) {
-            log.error(`[startRTMP] Path traversal blocked: ${inputFilePath}`);
+            log.error(`[startRTMPfromFile] Path traversal blocked: ${inputFilePath}`);
             return false;
         }
 
         // SECURITY CHECK 4: File must exist on server
         if (!fs.existsSync(inputFilePath)) {
-            log.error(`[startRTMP] File not found: ${inputFilePath}`);
+            log.error(`[startRTMPfromFile] File not found: ${inputFilePath}`);
             return false;
         }
 
-        log.debug('[startRTMP] Read all stream from file', inputFilePath);
+        log.debug('[startRTMPfromFile] Read all stream from file', inputFilePath);
 
         this.rtmpFileStreamer = new RtmpFile(socket_id, this);
 
@@ -131,18 +167,18 @@ class RtmpStreaming {
         return rtmpUrl;
     }
 
-    stopRTMP() {
-        if (!this.rtmp || !this.rtmp.enabled) {
-            log.debug('[stopRTMP] Server is not enabled or missing the config');
+    stopRTMPfromFile() {
+        if (!this.rtmpConfig || !this.rtmpConfig.enabled) {
+            log.debug('[stopRTMPfromFile] Server is not enabled or missing the config');
             return false;
         }
         if (this.rtmpFileStreamer) {
             this.rtmpFileStreamer.stop();
             this.rtmpFileStreamer = null;
-            log.debug('[stopRTMP] Streamer Stopped successfully!');
+            log.debug('[stopRTMPfromFile] Streamer Stopped successfully!');
             return true;
         } else {
-            log.debug('[stopRTMP] No process to stop');
+            log.debug('[stopRTMPfromFile] No process to stop');
             return false;
         }
     }
@@ -163,7 +199,7 @@ class RtmpStreaming {
         inputVideoURL = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
         customRtmpUrl = null
     ) {
-        if (!this.rtmp || !this.rtmp.enabled) {
+        if (!this.rtmpConfig || !this.rtmpConfig.enabled) {
             log.debug('[startRTMPfromURL] Server is not enabled or missing the config');
             return false;
         }
@@ -201,7 +237,7 @@ class RtmpStreaming {
     }
 
     stopRTMPfromURL() {
-        if (!this.rtmp || !this.rtmp.enabled) {
+        if (!this.rtmpConfig || !this.rtmpConfig.enabled) {
             log.debug('[stopRTMPfromURL] Server is not enabled or missing the config');
             return false;
         }
@@ -231,7 +267,7 @@ class RtmpStreaming {
 
     resolveRTMPUrl(host, port, customRtmpUrl = null) {
         if (customRtmpUrl) {
-            if (!this.rtmp.allowCustomUrl) {
+            if (!this.rtmpConfig.allowCustomUrl) {
                 log.warn('[resolveRTMPUrl] Custom RTMP URLs are disabled by server config');
                 return false;
             }
@@ -246,12 +282,12 @@ class RtmpStreaming {
     }
 
     getRTMPUrl(host, port) {
-        const rtmpUseNodeMediaServer = this.rtmp.useNodeMediaServer ?? true;
-        const rtmpServer = this.rtmp.server != '' ? this.rtmp.server : false;
-        const rtmpAppName = this.rtmp.appName != '' ? this.rtmp.appName : 'live';
-        const rtmpStreamKey = this.rtmp.streamKey != '' ? this.rtmp.streamKey : uuidv4();
-        const rtmpServerSecret = this.rtmp.secret != '' ? this.rtmp.secret : false;
-        const expirationHours = this.rtmp.expirationHours || 4;
+        const rtmpUseNodeMediaServer = this.rtmpConfig.useNodeMediaServer ?? true;
+        const rtmpServer = this.rtmpConfig.server != '' ? this.rtmpConfig.server : false;
+        const rtmpAppName = this.rtmpConfig.appName != '' ? this.rtmpConfig.appName : 'live';
+        const rtmpStreamKey = this.rtmpConfig.streamKey != '' ? this.rtmpConfig.streamKey : uuidv4();
+        const rtmpServerSecret = this.rtmpConfig.secret != '' ? this.rtmpConfig.secret : false;
+        const expirationHours = this.rtmpConfig.expirationHours || 4;
         const rtmpServerURL = rtmpServer ? rtmpServer : `rtmp://${host}:${port}`;
         const rtmpServerPath = '/' + rtmpAppName + '/' + rtmpStreamKey;
 
@@ -276,7 +312,7 @@ class RtmpStreaming {
     // ####################################################
 
     closeAll() {
-        if (this.isRtmpFileStreamerActive()) this.stopRTMP();
+        if (this.isRtmpFileStreamerActive()) this.stopRTMPfromFile();
         if (this.isRtmpUrlStreamerActive()) this.stopRTMPfromURL();
     }
 }

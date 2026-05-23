@@ -25,15 +25,6 @@ function generateRTMPUrl(baseURL, streamPath, secretKey, expirationHours = 8) {
 
     // Construct the final request address
     const rtmpUrl = `${baseURL}${streamPath}?sign=${expirationTime}-${hashValue}`;
-
-    // Print some log
-    console.debug('generateRTMPUrl', {
-        currentTime: currentTime,
-        expirationTime: expirationTime,
-        hashValue: hashValue,
-        rtmpUrl: rtmpUrl,
-    });
-
     return rtmpUrl;
 }
 

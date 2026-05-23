@@ -8,6 +8,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const Logger = require('./Logger');
 const log = new Logger('RtmpUrl');
 
+/** Worker that streams remote video URL to RTMP server via FFmpeg (input: HTTP URL → FFmpeg → RTMP) */
 class RtmpUrl {
     constructor(socket_id = false, room = false) {
         this.room = room;

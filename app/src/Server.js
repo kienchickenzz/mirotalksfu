@@ -3838,9 +3838,9 @@ function startServer() {
 
         /**
          * Start RTMP streaming from server-side video file
-         * FLOW: Client startRTMP() → here → room.startRTMP() → RtmpFile (FFmpeg)
+         * FLOW: Client startRTMPfromFile() → here → room.startRTMPfromFile() → RtmpFile (FFmpeg)
          */
-        socket.on('startRTMP', async (
+        socket.on('startRTMPfromFile', async (
             /** @type {{ peer_name: string, peer_uuid: string, file: string, customRtmpUrl?: string }} */
             dataObject,
             /** @type {(rtmpUrl: string|false) => void} */ 
@@ -3871,27 +3871,27 @@ function startServer() {
 
             const customRtmpUrl = data.customRtmpUrl || null;
 
-            const rtmp = await room.startRTMP(socket.id, room, host, 1935, `${rtmpDir}/${file}`, customRtmpUrl);
+            const rtmp = await room.startRTMPfromFile(socket.id, room, host, 1935, `${rtmpDir}/${file}`, customRtmpUrl);
 
-            log.debug('startRTMP - rtmpTotalActiveStreamsCount ---->', getRtmpTotalActiveStreamsCount());
+            log.debug('startRTMPfromFile - rtmpTotalActiveStreamsCount ---->', getRtmpTotalActiveStreamsCount());
 
             cb(rtmp);
         });
 
-        socket.on('stopRTMP', async () => {
+        socket.on('stopRTMPfromFile', async () => {
             if (!roomExists(socket)) return;
 
             const room = getRoom(socket);
 
-            await room.stopRTMP();
+            await room.stopRTMPfromFile();
 
-            log.debug('stopRTMP - rtmpTotalActiveStreamsCount ---->', getRtmpTotalActiveStreamsCount());
+            log.debug('stopRTMPfromFile - rtmpTotalActiveStreamsCount ---->', getRtmpTotalActiveStreamsCount());
         });
 
-        socket.on('endOrErrorRTMP', async () => {
+        socket.on('endOrErrorRTMPfromFile', async () => {
             if (!roomExists(socket)) return;
 
-            log.debug('endRTMP - rtmpTotalActiveStreamsCount ---->', getRtmpTotalActiveStreamsCount());
+            log.debug('endOrErrorRTMPfromFile - rtmpTotalActiveStreamsCount ---->', getRtmpTotalActiveStreamsCount());
         });
 
         socket.on('startRTMPfromURL', async (dataObject, cb) => {
@@ -4339,7 +4339,7 @@ function startServer() {
 
         if (isPresenter || forceCleanup) {
             if (room.isRtmpFileStreamerActive()) {
-                room.stopRTMP();
+                room.stopRTMPfromFile();
                 log.debug(
                     'stopRTMPActiveStreams - file stream stopped, rtmpTotalActiveStreamsCount',
                     getRtmpTotalActiveStreamsCount()
@@ -4787,7 +4787,7 @@ async function gracefulShutdown(signal) {
 
                 // Stop any active RTMP streams
                 if (room.isRtmpFileStreamerActive()) {
-                    await room.stopRTMP();
+                    await room.stopRTMPfromFile();
                 }
                 if (room.isRtmpUrlStreamerActive()) {
                     await room.stopRTMPfromURL();

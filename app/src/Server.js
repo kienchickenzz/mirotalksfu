@@ -74,6 +74,8 @@ dev dependencies: {
  * @typedef {import('mediasoup').types.Worker} MediasoupWorker
  * @typedef {import('mediasoup').types.Router} MediasoupRouter
  * @typedef {import('mediasoup').types.RtpParameters} RtpParameters
+ * 
+ * @typedef {import('./RtmpStreamer')} RtmpStreamer
  */
 
 const express = require('express');
@@ -148,7 +150,7 @@ const rtmpDir = rtmpCfg?.dir || 'rtmp';
 
 // Compute total active RTMP streams from actual sources (live + file + URL)
 function getRtmpTotalActiveStreamsCount() {
-    let count = Object.keys(streams).length;
+    let count = streams.size;
     for (const [, room] of roomList) {
         if (room.isRtmpFileStreamerActive()) count++;
         if (room.isRtmpUrlStreamerActive()) count++;
@@ -383,7 +385,8 @@ const roomList = new Map();
 
 const presenters = {}; // Collect presenters grp by roomId
 
-const streams = {}; // Collect all rtmp streams
+/** @type {Map<string, RtmpStreamer>} Active camera/screen RTMP streams: streamKey → RtmpStreamer instance */
+const streams = new Map();
 const STREAM_TIMEOUT_MS = 60 * 1000; // Cleanup orphaned streams after 60s of inactivity
 
 const webRtcServerActive = config.mediasoup.webRtcServerActive;
@@ -1369,8 +1372,7 @@ function startServer() {
         }
 
         const stream = new RtmpStreamer(rtmp, rtmpStreamKey);
-        stream.lastActivity = Date.now();
-        streams[rtmpStreamKey] = stream;
+        streams.set(rtmpStreamKey, stream);
 
         log.info('Active RTMP Streams', { total: getRtmpTotalActiveStreamsCount() });
 
@@ -1386,11 +1388,11 @@ function startServer() {
         }
 
         const rtmpStreamKey = req.query.key;
-        const stream = streams[rtmpStreamKey];
+        const stream = streams.get(rtmpStreamKey);
 
         if (!stream || !stream.isRunning()) {
-            delete streams[rtmpStreamKey];
-            log.debug('Stream not found', { rtmpStreamKey, streams: Object.keys(streams).length });
+            streams.delete(rtmpStreamKey);
+            log.debug('Stream not found', { rtmpStreamKey, streams: streams.size });
             return res.status(404).send('FFmpeg Stream not found');
         }
 
@@ -1411,11 +1413,11 @@ function startServer() {
         }
 
         const rtmpStreamKey = req.query.key;
-        const stream = streams[rtmpStreamKey];
+        const stream = streams.get(rtmpStreamKey);
 
         if (stream) {
             stream.end();
-            delete streams[rtmpStreamKey];
+            streams.delete(rtmpStreamKey);
             log.debug('Active RTMP Streams', { total: getRtmpTotalActiveStreamsCount() });
         }
 
@@ -1425,11 +1427,11 @@ function startServer() {
     // Cleanup orphaned RTMP streams that haven't received data
     setInterval(() => {
         const now = Date.now();
-        for (const [key, stream] of Object.entries(streams)) {
+        for (const [key, stream] of streams) {
             if (!stream.isRunning() || (stream.lastActivity && now - stream.lastActivity > STREAM_TIMEOUT_MS)) {
                 log.debug('Cleaning up orphaned RTMP stream', key);
                 stream.end();
-                delete streams[key];
+                streams.delete(key);
                 log.debug('Active RTMP Streams', { total: getRtmpTotalActiveStreamsCount() });
             }
         }
@@ -4806,13 +4808,13 @@ async function gracefulShutdown(signal) {
         }
 
         // 3. Close all RTMP streams
-        log.debug(`Closing ${Object.keys(streams).length} RTMP streams...`);
-        for (const [key, stream] of Object.entries(streams)) {
+        log.debug(`Closing ${streams.size} RTMP streams...`);
+        for (const [key, stream] of streams) {
             try {
                 if (stream && typeof stream.end === 'function') {
                     stream.end();
                 }
-                delete streams[key];
+                streams.delete(key);
             } catch (err) {
                 log.error(`Error closing RTMP stream ${key}:`, err.message);
             }

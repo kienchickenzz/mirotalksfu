@@ -107,7 +107,6 @@ class RtmpStreaming {
      * FLOW: Room.startRTMPfromFile() → here → RtmpFile.start() → FFmpeg → RTMP Server
      *
      * @param {string} socket_id - Socket ID for sending end/error callbacks to client
-     * @param {RtmpStreaming} room - RtmpStreaming instance (this) for callback context
      * @param {string} host - RTMP server host
      * @param {number} port - RTMP server port
      * @param {string} file - Relative path to video file from __dirname
@@ -116,7 +115,6 @@ class RtmpStreaming {
      */
     async startRTMPfromFile(
         socket_id,
-        room,
         host = 'localhost',
         port = 1935,
         file = '../rtmp/BigBuckBunny.mp4',
@@ -193,7 +191,6 @@ class RtmpStreaming {
 
     async startRTMPfromURL(
         socket_id,
-        room,
         host = 'localhost',
         port = 1935,
         inputVideoURL = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',

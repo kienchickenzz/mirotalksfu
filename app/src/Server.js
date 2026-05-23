@@ -3871,7 +3871,7 @@ function startServer() {
 
             const customRtmpUrl = data.customRtmpUrl || null;
 
-            const rtmp = await room.startRTMPfromFile(socket.id, room, host, 1935, `${rtmpDir}/${file}`, customRtmpUrl);
+            const rtmp = await room.startRTMPfromFile(socket.id, host, 1935, `${rtmpDir}/${file}`, customRtmpUrl);
 
             log.debug('startRTMPfromFile - rtmpTotalActiveStreamsCount ---->', getRtmpTotalActiveStreamsCount());
 
@@ -3920,7 +3920,7 @@ function startServer() {
 
             const customRtmpUrl = data.customRtmpUrl || null;
 
-            const rtmp = await room.startRTMPfromURL(socket.id, room, host, 1935, inputVideoURL, customRtmpUrl);
+            const rtmp = await room.startRTMPfromURL(socket.id, host, 1935, inputVideoURL, customRtmpUrl);
 
             log.debug('startRTMPfromURL - rtmpTotalActiveStreamsCount ---->', getRtmpTotalActiveStreamsCount());
 

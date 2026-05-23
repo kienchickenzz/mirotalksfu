@@ -215,15 +215,14 @@ module.exports = class Room {
      * Start RTMP streaming from server-side video file (proxy to RtmpStreaming)
      * FLOW: Server socket.on('startRTMPfromFile') → here → RtmpStreaming → RtmpFile (FFmpeg)
      * @param {string} socket_id - Socket ID for sending end/error callbacks
-     * @param {Room} room - Room instance for callback context
      * @param {string} host - RTMP server host (localhost or hostname)
      * @param {number} port - RTMP server port (default 1935)
      * @param {string} file - Path to video file on server
      * @param {string|null} customRtmpUrl - Optional custom RTMP destination (YouTube/Twitch)
      * @returns {Promise<string|false>} RTMP URL if success, false if failed
      */
-    async startRTMPfromFile(socket_id, room, host, port, file, customRtmpUrl) {
-        return this.rtmpStreaming.startRTMPfromFile(socket_id, room, host, port, file, customRtmpUrl);
+    async startRTMPfromFile(socket_id, host, port, file, customRtmpUrl) {
+        return this.rtmpStreaming.startRTMPfromFile(socket_id, host, port, file, customRtmpUrl);
     }
 
     stopRTMPfromFile() {
@@ -234,8 +233,8 @@ module.exports = class Room {
         return this.rtmpStreaming.isRtmpUrlStreamerActive();
     }
 
-    async startRTMPfromURL(socket_id, room, host, port, inputVideoURL, customRtmpUrl) {
-        return this.rtmpStreaming.startRTMPfromURL(socket_id, room, host, port, inputVideoURL, customRtmpUrl);
+    async startRTMPfromURL(socket_id, host, port, inputVideoURL, customRtmpUrl) {
+        return this.rtmpStreaming.startRTMPfromURL(socket_id, host, port, inputVideoURL, customRtmpUrl);
     }
 
     stopRTMPfromURL() {

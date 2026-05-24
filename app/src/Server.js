@@ -2008,7 +2008,11 @@ function startServer() {
             }
         });
 
-        socket.on('createRoom', async ({ room_id }, callback) => {
+        // Handle room creation request from client
+        socket.on('createRoom', async (
+            /** @type {{ room_id: string }} */ { room_id },
+            /** @type {Function} */ callback
+        ) => {
             socket.room_id = room_id;
 
             if (roomList.has(socket.room_id)) {

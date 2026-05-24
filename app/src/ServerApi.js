@@ -9,13 +9,23 @@ const { v4: uuidV4 } = require('uuid');
 const JWT_KEY = config.security?.jwt?.key || 'mirotalksfu_jwt_secret';
 const JWT_EXP = config.security?.jwt?.exp || '1h';
 
+/** Simple API key authentication - compares request header against config secret */
 module.exports = class ServerApi {
+    
+    /**
+     * @param {string|null} host - Request host header (for generating URLs)
+     * @param {string|null} authorization - API key from request header to validate
+     */
     constructor(host = null, authorization = null) {
         this._host = host;
         this._authorization = authorization;
         this._api_key_secret = config.api.keySecret;
     }
 
+    /**
+     * Check if request authorization header matches config API secret
+     * @returns {boolean} true if authorized
+     */
     isAuthorized() {
         if (!this._api_key_secret || typeof this._api_key_secret !== 'string') return false;
         if (!this._authorization || typeof this._authorization !== 'string') return false;

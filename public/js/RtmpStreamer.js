@@ -175,11 +175,16 @@ async function stopRTMP() {
     }
 }
 
+/**
+ * Send video chunk to server via REST API (server forwards to RTMP via FFmpeg)
+ * @param {Blob} data - WebM video blob from MediaRecorder.ondataavailable
+ * @returns {Promise<void>}
+ */
 async function streamRTMPChunk(data) {
     const apiSecret = apiSecretInput.value;
 
     const arrayBuffer = await data.arrayBuffer();
-    const chunkSize = 1000000; // 1mb
+    const chunkSize = 1000000; // 1Mb - split large blobs into smaller chunks
     const totalChunks = Math.ceil(arrayBuffer.byteLength / chunkSize);
 
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {

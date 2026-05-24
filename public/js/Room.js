@@ -251,6 +251,7 @@ let swalBackground = 'radial-gradient(#393939, #000000)'; //'rgba(0, 0, 0, 0.7)'
 
 /** @type {RoomClient|null} Main client controller for WebRTC, created in joinRoom() */
 let rc = null;
+
 let producer = null;
 let participantsCount = 0;
 let lobbyParticipantsCount = 0;
@@ -259,7 +260,10 @@ let chatMessagesId = 0;
 let room_id = getRoomId();
 let room_password = getRoomPassword();
 let room_duration = getRoomDuration();
+
+/** @type {string|null} Username from URL ?name= param */
 let peer_name = getPeerName();
+
 let peer_avatar = getPeerAvatar();
 let hasTemporaryAvatar = !!(
     peer_avatar &&
@@ -357,9 +361,11 @@ let quill = null;
 // INIT ROOM
 // ####################################################
 
+// Entry point: fires after all deferred scripts executed and DOM ready
 document.addEventListener('DOMContentLoaded', function () {
     initCursorLightEffect();
     initDocumentListener();
+    // Wait for WebSocket connection before initializing room (needs socket.request)
     socket.once('connect', () => {
         initClient();
     });
@@ -654,8 +660,10 @@ async function refreshMyAudioDevices() {
     if (speakerSelect) speakerSelect.selectedIndex = speakerSelectIndex;
 }
 
+/**
+ * Request camera permission and populate video device dropdown
+ */
 async function initEnumerateVideoDevices() {
-    // allow the video
     await navigator.mediaDevices
         .getUserMedia({ video: true })
         .then(async (stream) => {
@@ -663,10 +671,14 @@ async function initEnumerateVideoDevices() {
             isVideoAllowed = true;
         })
         .catch(() => {
-            isVideoAllowed = false;
+            isVideoAllowed = false; // User denied access or no camera available
         });
 }
 
+/**
+ * Get list of cameras and populate <select> dropdowns
+ * @param {MediaStream} stream - Temp stream from getUserMedia (stopped after enumeration)
+ */
 async function enumerateVideoDevices(stream) {
     console.log('02 ----> Get Video Devices');
 
@@ -694,20 +706,26 @@ async function enumerateVideoDevices(stream) {
         });
 }
 
+/**
+ * Request microphone permission and populate audio device dropdowns (mic + speaker)
+ */
 async function initEnumerateAudioDevices() {
-    // allow the audio
     await navigator.mediaDevices
-        .getUserMedia({ audio: true })
+        .getUserMedia({ audio: true }) // Request microphone permission (browser popup)
         .then(async (stream) => {
             await enumerateAudioDevices(stream);
             await getMicrophoneVolumeIndicator(stream);
             isAudioAllowed = true;
         })
         .catch(() => {
-            isAudioAllowed = false;
+            isAudioAllowed = false; // User denied access or no microphone available
         });
 }
 
+/**
+ * Get list of microphones and speakers, populate <select> dropdowns
+ * @param {MediaStream} stream - Temp stream from getUserMedia (stopped after enumeration)
+ */
 async function enumerateAudioDevices(stream) {
     console.log('03 ----> Get Audio Devices');
 
@@ -1128,6 +1146,10 @@ async function checkInitConfig() {
 // SOME PEER INFO
 // ####################################################
 
+/**
+ * Populate global peer_info object with current user metadata
+ * @returns {void}
+ */
 function getPeerInfo() {
     peer_info = {
         join_data_time: getDataTimeString(),
@@ -1245,6 +1267,7 @@ async function whoAreYou() {
         console.error('04 ----> AXIOS GET CONFIG ERROR', error.message);
     }
 
+
     if (navigator.getDisplayMedia || navigator.mediaDevices.getDisplayMedia) {
         BUTTONS.main.startScreenButton && show(initStartScreenButton);
     }
@@ -1258,13 +1281,14 @@ async function whoAreYou() {
         show(videoVirtualBackground);
     }
 
+    // Direct join: peer_name already set from URL query param, skip Swal popup
     if (peer_name) {
         hide(loadingDiv);
         checkMedia();
         if (!BUTTONS.main.startScreenButton) isScreenAllowed = false;
         getPeerInfo();
         joinRoom(peer_name, room_id);
-        return;
+        return; // Skip manual join flow
     }
 
     let default_name = window.localStorage.peer_name ? window.localStorage.peer_name : '';
@@ -1296,6 +1320,7 @@ async function whoAreYou() {
     if (!BUTTONS.main.startScreenButton) {
         hide(initStartScreenButton);
     }
+
 
     // Fetch the OIDC profile and manage peer_name
     let force_peer_name = false;
@@ -1334,6 +1359,8 @@ async function whoAreYou() {
         console.error('AXIOS OIDC Error fetching profile', error.message || error);
     }
 
+
+    // Manual join: show SweetAlert2 popup to enter name and preview video/audio
     Swal.fire({
         allowOutsideClick: false,
         allowEscapeKey: false,
@@ -1343,7 +1370,7 @@ async function whoAreYou() {
         inputPlaceholder: 'Enter your email or name',
         inputAttributes: { maxlength: 254, id: 'usernameInput' },
         inputValue: default_name,
-        html: initUser, // Inject HTML
+        html: initUser, // Inject init user container into popup body
         confirmButtonText: `Join meeting`,
         customClass: { popup: 'init-modal-size' },
         showClass: { popup: 'animate__animated animate__fadeInDown' },
@@ -1376,6 +1403,7 @@ async function whoAreYou() {
             }
         },
     }).then(async () => {
+        // Popup closed -> cleanup preview stream and join room
         if (!usernameEmoji.classList.contains('hidden')) {
             usernameEmoji.classList.add('hidden');
         }

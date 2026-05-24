@@ -268,6 +268,7 @@ let recordedBlobs = [];
  * RoomClient - Main client-side controller for WebRTC video conferencing
  */
 class RoomClient {
+    
     constructor(
         localAudioEl,
         remoteAudioEl,
@@ -287,7 +288,9 @@ class RoomClient {
         transcription,
         successCallback
     ) {
+        /** @type {string} Room identifier from URL path or query param */
         this.room_id = room_id;
+        
         this.peer_id = socket.id;
         this.peer_name = peer_name;
         this.peer_uuid = peer_uuid;
@@ -583,6 +586,11 @@ class RoomClient {
     // GET STARTED
     // ####################################################
 
+    /**
+     * Request server to create a new room (or get error if already exists)
+     * @param {string} room_id - Room identifier
+     * @returns {Promise<void>}
+     */
     async createRoom(room_id) {
         await this.socket
             .request('createRoom', {

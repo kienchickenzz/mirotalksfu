@@ -667,7 +667,8 @@ async function initEnumerateVideoDevices() {
     await navigator.mediaDevices
         .getUserMedia({ video: true })
         .then(async (stream) => {
-            await enumerateVideoDevices(stream);
+            await enumerateVideoDevices();
+            await stopTracks(stream);
             isVideoAllowed = true;
         })
         .catch(() => {
@@ -676,10 +677,10 @@ async function initEnumerateVideoDevices() {
 }
 
 /**
- * Get list of cameras and populate <select> dropdowns
- * @param {MediaStream} stream - Temp stream from getUserMedia (stopped after enumeration)
+ * Get list of cameras and populate <select> dropdowns.
+ * Requires getUserMedia permission to be granted first (for device labels)
  */
-async function enumerateVideoDevices(stream) {
+async function enumerateVideoDevices() {
     console.log('02 ----> Get Video Devices');
 
     if (videoSelect) videoSelect.innerHTML = '';
@@ -700,8 +701,7 @@ async function enumerateVideoDevices(stream) {
                 await addChild(device, [el, eli]);
             })
         )
-        .then(async () => {
-            await stopTracks(stream);
+        .then(() => {
             isEnumerateVideoDevices = true;
         });
 }
@@ -766,6 +766,10 @@ async function enumerateAudioDevices(stream) {
         });
 }
 
+/**
+ * Stop all tracks in a MediaStream (releases camera/mic hardware)
+ * @param {MediaStream} stream
+ */
 async function stopTracks(stream) {
     stream.getTracks().forEach((track) => {
         track.stop();
